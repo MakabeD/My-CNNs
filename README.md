@@ -4,7 +4,7 @@ there are mainly two categories:
 
 1) Defective
 
-2)Ok
+2) Ok
 
 making classification model we already split data for training and testing into two folders.
 Both train and test folder contains def_front and ok_front subfolders.
