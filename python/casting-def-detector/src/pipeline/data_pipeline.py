@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from pathlib import Path
@@ -9,6 +10,8 @@ from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.datasets import ImageFolder
+
+CONFIG_PATH = Path(__file__).parent.parent.parent.joinpath("config.json")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,6 +55,67 @@ class CastingDataset(Dataset):
     @property
     def class_to_idx(self):
         return self.dataset.class_to_idx
+
+
+def save_statistics(config_path, mean, std, classes=None, additional_info=None):
+    """
+    Saves dataset statistics (mean, std) and optional metadata to a JSON config file.
+
+    Args:
+        config_path (str or Path): Path to the output JSON config file.
+        mean (float): Mean value of the dataset.
+        std (float): Standard deviation of the dataset.
+        classes (list, optional): List of class names. Defaults to None.
+        additional_info (dict, optional): Additional metadata to save. Defaults to None.
+    """
+    config_data = {
+        "mean": mean,
+        "std": std,
+    }
+
+    if classes is not None:
+        config_data["classes"] = classes
+
+    if additional_info is not None:
+        config_data.update(additional_info)
+
+    # Ensure parent directory exists
+    config_path = Path(config_path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        json.dump(config_data, f, indent=4)
+
+    logger.info(f"📊 Statistics saved to {config_path}")
+
+
+def load_statistics(config_path):
+    """
+    Loads dataset statistics (mean, std) and optional metadata from a JSON config file.
+
+    Args:
+        config_path (str or Path): Path to the JSON config file.
+
+    Returns:
+        dict: Dictionary containing mean, std, classes (if available), and any additional info.
+
+    Raises:
+        FileNotFoundError: If the config file does not exist.
+        ValueError: If required fields (mean, std) are missing from the config.
+    """
+    config_path = Path(config_path)
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with open(config_path, "r") as f:
+        config_data = json.load(f)
+
+    # Validate required fields
+    if "mean" not in config_data or "std" not in config_data:
+        raise ValueError("Config file must contain 'mean' and 'std' fields.")
+
+    logger.info(f"📊 Statistics loaded from {config_path}")
+    return config_data
 
 
 def calculate_mean_std_from_subset(dataset_subset, sample_size=2000):
@@ -105,7 +169,7 @@ def calculate_mean_std_from_subset(dataset_subset, sample_size=2000):
 
     mean /= effective_size * 1.0  # 1 channel
     std /= effective_size * 1.0
-
+    save_statistics(CONFIG_PATH, mean, std)
     return mean, std
 
 
