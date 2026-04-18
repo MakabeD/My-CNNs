@@ -42,6 +42,12 @@ def init_mlflow_experiment(
         run_name: Optional name for the specific run.
     """
     logger.info("Initializing DagsHub and MLflow...")
+
+    # End any existing run before initializing
+    if mlflow.active_run():
+        logger.info("Ending existing MLflow run before initialization...")
+        mlflow.end_run()
+
     dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
     mlflow.set_experiment(experiment_name)
     if run_name:
@@ -112,7 +118,7 @@ def train_one_epoch(
     total_loss = 0.0
     all_preds = []
     all_labels = []
-
+    print(dataloader)
     pbar = tqdm(dataloader, desc=f"Epoch {epoch} [Train]")
     for batch_idx, (inputs, labels) in enumerate(pbar):
         inputs, labels = inputs.to(device), labels.to(device)
@@ -263,109 +269,173 @@ def train_loop(
     if optimizer is None:
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # Initialize MLflow
-    init_mlflow_experiment(experiment_name=experiment_name, run_name=run_name)
+    # Initialize MLflow (this also starts a run via dagshub.init)
+    init_mlflow_experiment(
+        experiment_name=experiment_name, run_name=run_name
+    )
 
-    # Start MLflow run
-    with mlflow.start_run() as run:
-        logger.info(f"MLflow run started with ID: {run.info.run_id}")
-
-        # Log hyperparameters
-        if log_hyperparams:
-            mlflow.log_params(log_hyperparams)
-            logger.info(f"Logged hyperparameters: {log_hyperparams}")
-
-        # Log model architecture
-        mlflow.pytorch.log_model(model, artifact_path="model_initial")
-        logger.info("Logged initial model architecture")
-
-        best_val_loss = float("inf")
-        best_model_state = None
-        history = {"train": [], "val": [], "test": None}
-
-        for epoch in range(1, num_epochs + 1):
-            logger.info(f"\n{'=' * 50}\nEpoch {epoch}/{num_epochs}\n{'=' * 50}")
-
-            # Training phase
-            train_metrics = train_one_epoch(
+    # Get the current active run (started by dagshub.init)
+    run = mlflow.active_run()
+    if run is None:
+        # If no run is active, start a new one
+        logger.info("No active MLflow run found, starting a new run...")
+        with mlflow.start_run() as new_run:
+            return _train_with_mlflow(
                 model=model,
-                dataloader=train_loader,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                test_loader=test_loader,
                 criterion=criterion,
                 optimizer=optimizer,
+                num_epochs=num_epochs,
                 device=device,
-                epoch=epoch,
+                log_hyperparams=log_hyperparams,
+                run=new_run,
             )
+    else:
+        logger.info(f"Using existing MLflow run with ID: {run.info.run_id}")
+        return _train_with_mlflow(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            test_loader=test_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            num_epochs=num_epochs,
+            device=device,
+            log_hyperparams=log_hyperparams,
+            run=run,
+        )
 
-            # Validation phase
-            val_metrics = validate(
-                model=model,
-                dataloader=val_loader,
-                criterion=criterion,
-                device=device,
-                epoch=epoch,
-                phase="Val",
-            )
 
-            # Combine all metrics
-            epoch_metrics = {**train_metrics, **val_metrics}
+def _train_with_mlflow(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    test_loader: Optional[DataLoader],
+    criterion: nn.Module,
+    optimizer: Optimizer,
+    num_epochs: int,
+    device: torch.device,
+    log_hyperparams: Optional[Dict[str, Any]],
+    run: Any,
+) -> Dict[str, Any]:
+    """
+    Internal training function that runs within an MLflow context.
 
-            # Log all metrics to MLflow with step
-            for metric_name, metric_value in epoch_metrics.items():
-                mlflow.log_metric(metric_name, metric_value, step=epoch)
-            logger.info(f"Logged metrics for epoch {epoch} to MLflow")
+    Args:
+        model: The neural network model to train.
+        train_loader: DataLoader for training data.
+        val_loader: DataLoader for validation data.
+        test_loader: Optional DataLoader for test data.
+        criterion: Loss function.
+        optimizer: Optimizer.
+        num_epochs: Number of training epochs.
+        device: Device to use.
+        log_hyperparams: Optional dictionary of hyperparameters to log.
+        run: The active MLflow run.
 
-            # Store history
-            history["train"].append(train_metrics)
-            history["val"].append(val_metrics)
+    Returns:
+        Dictionary containing training history and best model path.
+    """
+    logger.info(f"MLflow run active with ID: {run.info.run_id}")
 
-            # Save best model
-            if val_metrics["val_loss"] < best_val_loss:
-                best_val_loss = val_metrics["val_loss"]
-                best_model_state = model.state_dict().copy()
-                logger.info(f"New best model saved with val_loss: {best_val_loss:.4f}")
+    # Log hyperparameters
+    if log_hyperparams:
+        mlflow.log_params(log_hyperparams)
+        logger.info(f"Logged hyperparameters: {log_hyperparams}")
 
-                # Log best model to MLflow
-                mlflow.pytorch.log_model(model, artifact_path="model_best")
+    # Log model architecture
+    mlflow.pytorch.log_model(model, artifact_path="model_initial")
+    logger.info("Logged initial model architecture")
 
-        # Final evaluation on test set
-        if test_loader is not None:
-            logger.info("\n" + "=" * 50)
-            logger.info("Final Evaluation on Test Set")
-            logger.info("=" * 50)
+    best_val_loss = float("inf")
+    best_model_state = None
+    history = {"train": [], "val": [], "test": None}
 
-            # Load best model for final evaluation
-            if best_model_state is not None:
-                model.load_state_dict(best_model_state)
+    for epoch in range(1, num_epochs + 1):
+        logger.info(f"\n{'='*50}\nEpoch {epoch}/{num_epochs}\n{'='*50}")
 
-            test_metrics = validate(
-                model=model,
-                dataloader=test_loader,
-                criterion=criterion,
-                device=device,
-                epoch=num_epochs,
-                phase="Test",
-            )
-            history["test"] = test_metrics
+        # Training phase
+        train_metrics = train_one_epoch(
+            model=model,
+            dataloader=train_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
+            epoch=epoch,
+        )
 
-            # Log test metrics
-            for metric_name, metric_value in test_metrics.items():
-                mlflow.log_metric(metric_name, metric_value, step=num_epochs)
+        # Validation phase
+        val_metrics = validate(
+            model=model,
+            dataloader=val_loader,
+            criterion=criterion,
+            device=device,
+            epoch=epoch,
+            phase="Val",
+        )
 
-        # Log final summary
-        mlflow.log_param("best_val_loss", best_val_loss)
-        mlflow.log_param("num_epochs", num_epochs)
+        # Combine all metrics
+        epoch_metrics = {**train_metrics, **val_metrics}
 
+        # Log all metrics to MLflow with step
+        for metric_name, metric_value in epoch_metrics.items():
+            mlflow.log_metric(metric_name, metric_value, step=epoch)
+        logger.info(f"Logged metrics for epoch {epoch} to MLflow")
+
+        # Store history
+        history["train"].append(train_metrics)
+        history["val"].append(val_metrics)
+
+        # Save best model
+        if val_metrics["val_loss"] < best_val_loss:
+            best_val_loss = val_metrics["val_loss"]
+            best_model_state = model.state_dict().copy()
+            logger.info(f"New best model saved with val_loss: {best_val_loss:.4f}")
+
+            # Log best model to MLflow
+            mlflow.pytorch.log_model(model, artifact_path="model_best")
+
+    # Final evaluation on test set
+    if test_loader is not None:
         logger.info("\n" + "=" * 50)
-        logger.info("Training Complete!")
-        logger.info(f"Best Validation Loss: {best_val_loss:.4f}")
+        logger.info("Final Evaluation on Test Set")
         logger.info("=" * 50)
 
-        return {
-            "history": history,
-            "best_val_loss": best_val_loss,
-            "run_id": run.info.run_id,
-            "model_state": best_model_state,
-        }
+        # Load best model for final evaluation
+        if best_model_state is not None:
+            model.load_state_dict(best_model_state)
+
+        test_metrics = validate(
+            model=model,
+            dataloader=test_loader,
+            criterion=criterion,
+            device=device,
+            epoch=num_epochs,
+            phase="Test",
+        )
+        history["test"] = test_metrics
+
+        # Log test metrics
+        for metric_name, metric_value in test_metrics.items():
+            mlflow.log_metric(metric_name, metric_value, step=num_epochs)
+
+    # Log final summary
+    mlflow.log_param("best_val_loss", best_val_loss)
+    mlflow.log_param("num_epochs", num_epochs)
+
+    logger.info("\n" + "=" * 50)
+    logger.info("Training Complete!")
+    logger.info(f"Best Validation Loss: {best_val_loss:.4f}")
+    logger.info("=" * 50)
+
+    return {
+        "history": history,
+        "best_val_loss": best_val_loss,
+        "run_id": run.info.run_id,
+        "model_state": best_model_state,
+    }
 
 
 if __name__ == "__main__":
@@ -384,10 +454,10 @@ if __name__ == "__main__":
         sys.path.insert(0, str(src_path))
 
     from utils.config import (
-        Config,
-        build_criterion,
-        build_optimizer,
         load_config,
+        build_optimizer,
+        build_criterion,
+        Config,
     )
 
     # Import model and pipeline modules (handled with try-except for missing dependencies)
@@ -404,7 +474,9 @@ if __name__ == "__main__":
         create_dataloaders = None
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Train casting defect detection model")
+    parser = argparse.ArgumentParser(
+        description="Train casting defect detection model"
+    )
     parser.add_argument(
         "--config",
         type=str,
@@ -447,7 +519,6 @@ if __name__ == "__main__":
         # Assuming you have a get_model function in model.py
         # Adjust this based on your actual model creation logic
         from model.model import get_model
-
         model = get_model(
             model_name=config.model.name,
             num_classes=config.model.num_classes,
@@ -457,16 +528,14 @@ if __name__ == "__main__":
         model = model.to(device)
         logger.info("Model created successfully!")
     except ImportError:
-        logger.warning(
-            "Model module not found. Please implement get_model() in model/model.py"
-        )
+        logger.warning("Model module not found. Please implement get_model() in model/model.py")
         # Fallback: create a simple model for testing
         model = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(64, config.model.num_classes),
+            nn.Linear(64, config.model.num_classes)
         ).to(device)
         logger.info("Created fallback model for testing")
 
@@ -483,13 +552,11 @@ if __name__ == "__main__":
     try:
         # Assuming you have a create_dataloaders function in data_pipeline.py
         # Adjust this based on your actual data loading logic
-        from pipeline.data_pipeline import create_dataloaders
+        from pipeline.data_pipeline import prepare_data
 
-        train_loader, val_loader, test_loader = create_dataloaders(
+        train_loader, val_loader, test_loader,classes  = prepare_data(
             train_path=config.data.train_path,
-            val_path=config.config.data.val_path
-            if hasattr(config.data, "val_path")
-            else "",
+            val_path=config.config.data.val_path if hasattr(config.data, 'val_path') else "",
             test_path=config.data.test_path,
             batch_size=config.data.batch_size,
             num_workers=config.data.num_workers,
@@ -500,15 +567,12 @@ if __name__ == "__main__":
         logger.info("Data loaders created successfully!")
     except (ImportError, AttributeError) as e:
         logger.warning(f"Could not create dataloaders: {e}")
-        logger.warning(
-            "Please implement create_dataloaders() in pipeline/data_pipeline.py"
-        )
+        logger.warning("Please implement create_dataloaders() in pipeline/data_pipeline.py")
         # Create dummy dataloaders for testing
         from torch.utils.data import DataLoader, TensorDataset
-
         dummy_dataset = TensorDataset(
             torch.randn(100, 3, *config.data.img_size),
-            torch.randint(0, config.model.num_classes, (100,)),
+            torch.randint(0, config.model.num_classes, (100,))
         )
         train_loader = DataLoader(dummy_dataset, batch_size=config.data.batch_size)
         val_loader = DataLoader(dummy_dataset, batch_size=config.data.batch_size)
@@ -548,8 +612,7 @@ if __name__ == "__main__":
             num_epochs=config.training.epochs,
             device=device,
             experiment_name=config.mlflow.experiment_name,
-            run_name=config.training.run_name
-            or f"{config.training.experiment_name}_{config.model.name}",
+            run_name=config.training.run_name or f"{config.training.experiment_name}_{config.model.name}",
             log_hyperparams=hyperparams,
         )
 
@@ -565,6 +628,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Training failed with error: {e}")
         import traceback
-
         traceback.print_exc()
         sys.exit(1)
