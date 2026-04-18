@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -8,6 +9,13 @@ from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.datasets import ImageFolder
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - [%(levelname)s] - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 class CastingDataset(Dataset):
@@ -46,47 +54,59 @@ class CastingDataset(Dataset):
         return self.dataset.class_to_idx
 
 
-def calculate_mean_std(data_dir, sample_size=2000):
+def calculate_mean_std_from_subset(dataset_subset, sample_size=2000):
     """
-    Calculates mean and std of the dataset for normalization.
-    Only samples a subset to speed up calculation if dataset is huge.
+    Calculates mean and std ONLY from the provided subset (e.g., training subset).
+    This prevents data leakage from validation/test sets.
     """
-    print("Calculating dataset statistics (mean/std)...")
+    logger.info(
+        "Calculating dataset statistics (mean/std) from TRAINING subset only..."
+    )
 
-    # Basic transform just to get tensors
+    # Basic transform just to get tensors (No augmentation, just resize/to_tensor)
     temp_transform = transforms.Compose(
         [transforms.Grayscale(), transforms.Resize((300, 300)), transforms.ToTensor()]
     )
 
-    temp_dataset = CastingDataset(root_dir=data_dir, transform=temp_transform)
+    # We need to access the underlying dataset and map the subset indices
+    base_dataset = dataset_subset.dataset
+    indices = dataset_subset.indices
 
-    # Sample if too large
-    total_len = len(temp_dataset)
+    total_len = len(indices)
     if total_len > sample_size:
-        indices = np.random.choice(total_len, sample_size, replace=False)
-        sampler = torch.utils.data.SubsetRandomSampler(indices)
-        loader = DataLoader(temp_dataset, batch_size=64, sampler=sampler, num_workers=4)
+        # Sample randomly from the SUBSET indices only
+        sampled_indices = np.random.choice(indices, sample_size, replace=False)
         effective_size = sample_size
     else:
-        loader = DataLoader(temp_dataset, batch_size=64, shuffle=False, num_workers=4)
+        sampled_indices = indices
         effective_size = total_len
 
     mean = 0.0
     std = 0.0
     total_samples = 0
 
-    for images, _ in loader:
-        batch_samples = images.size(0)
-        images = images.view(batch_samples, images.size(1), -1)  # Flatten spatial dims
+    # Manual iteration to avoid creating a full Subset DataLoader which might be tricky with transforms
+    # We temporarily apply the temp_transform to read pixels
+    for idx in sampled_indices:
+        img_path, _ = base_dataset.dataset.samples[idx]
+        image = Image.open(img_path).convert("L")
+        tensor = temp_transform(image)
 
-        mean += images.mean(2).sum(0)
-        std += images.std(2).sum(0)
-        total_samples += batch_samples
-        print(mean)
-    mean /= effective_size
-    std /= effective_size
+        # Flatten spatial dims (C, H, W) -> (C, H*W)
+        tensor = tensor.view(tensor.size(0), -1)
 
-    return mean.item(), std.item()
+        mean += tensor.mean(1).sum().item()
+        std += tensor.std(1).sum().item()
+        total_samples += 1
+
+        # Progress indicator for large datasets
+        if total_samples % 500 == 0:
+            logger.info(f"  Processed {total_samples}/{effective_size} images...")
+
+    mean /= effective_size * 1.0  # 1 channel
+    std /= effective_size * 1.0
+
+    return mean, std
 
 
 def get_transforms(mean, std, train=True):
@@ -99,100 +119,90 @@ def get_transforms(mean, std, train=True):
 
     if train:
         # Insert augmentations before ToTensor/Normalize
-        # Note: We apply these on the PIL image before ToTensor converts to tensor
-        # So we reconstruct the list slightly differently or use separate logic.
-        # Let's rebuild specifically for clarity:
-
         aug_transforms = [
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=15),
             transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),  # Small shifts
         ]
-
         return transforms.Compose(aug_transforms + base_transforms)
 
     return transforms.Compose(base_transforms)
 
 
-def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=4):
+def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=0):
     """
     Main function to prepare DataLoaders.
+    CRITICAL: Splits data FIRST, then calculates stats from TRAIN split ONLY.
 
     Args:
         root_data_path (str): Path to the folder containing 'train' and 'test' folders.
         batch_size (int): Batch size for loaders.
         val_split (float): Fraction of training data to use for validation.
-        num_workers (int): Number of subprocesses for data loading.
+        num_workers (int): Number of subprocesses. Default 0 for Windows/OneDrive safety.
 
     Returns:
         train_loader, val_loader, test_loader, classes
     """
 
-    train_dir = root_data_path / "train"
-    test_dir = root_data_path / "test"
+    train_dir = Path(root_data_path) / "train"
+    test_dir = Path(root_data_path) / "test"
 
     if not os.path.exists(train_dir) or not os.path.exists(test_dir):
         raise FileNotFoundError(
             f"Expected 'train' and 'test' folders inside {root_data_path}"
         )
 
-    # 1. Calculate Stats from Training Data only (to prevent data leakage)
-    mean, std = calculate_mean_std(train_dir)
-    print(f"Calculated Stats -> Mean: {mean:.4f}, Std: {std:.4f}")
-
-    # 2. Define Transforms
-    train_transform = get_transforms(mean, std, train=True)
-    # Validation and Test should NOT have augmentation, only normalization
-    val_test_transform = get_transforms(mean, std, train=False)
-
-    # 3. Load Full Training Dataset (initially without transform to split indices)
-    # We load raw to split indices, then apply transforms to subsets
-    full_train_dataset = CastingDataset(root_dir=train_dir, transform=None)
-    test_dataset = CastingDataset(root_dir=test_dir, transform=val_test_transform)
-
+    # 1. Load Raw Training Dataset (no transforms yet)
+    full_train_dataset = CastingDataset(root_dir=str(train_dir), transform=None)
     classes = full_train_dataset.classes
-    print(f"Classes found: {classes}")
+    logger.info(f"Classes found: {classes}")
 
-    # 4. Split Training into Train & Validation
-    # We split indices based on labels to ensure stratification (balanced classes)
+    # 2. Split Indices FIRST (Stratified to keep class balance)
     labels = [label for _, label in full_train_dataset.dataset.samples]
 
     train_indices, val_indices = train_test_split(
         list(range(len(full_train_dataset))),
         test_size=val_split,
         stratify=labels,
-        random_state=42,
+        random_state=42,  # Reproducible splits
     )
 
-    # Create Subsets
-    train_subset = Subset(full_train_dataset, train_indices)
-    val_subset = Subset(full_train_dataset, val_indices)
+    logger.info(
+        f"Split complete: {len(train_indices)} Train, {len(val_indices)} Val samples."
+    )
 
-    # Assign transforms to the underlying dataset of the subsets
-    # Note: Subset shares the underlying dataset, so we must be careful.
-    # Best practice here: Create new datasets with transforms for each split
-    # OR modify the transform of the base dataset carefully.
-    # Since Subset references the same base object, changing transform affects all.
-    # Solution: Re-instantiate datasets for splits with specific transforms.
+    # 3. Create Subsets based on indices
+    # We create temporary subsets just to pass to the stats calculator
+    train_subset_for_stats = Subset(full_train_dataset, train_indices)
 
-    # Re-create specific datasets for splits to ensure independent transforms
-    train_final_dataset = CastingDataset(root_dir=train_dir, transform=train_transform)
-    val_final_dataset = CastingDataset(root_dir=train_dir, transform=val_test_transform)
+    # 4. Calculate Stats FROM THE TRAIN SUBSET ONLY (No Leakage!)
+    mean, std = calculate_mean_std_from_subset(train_subset_for_stats)
+    logger.info(f"Calculated Stats (Train Only) -> Mean: {mean:.4f}, Std: {std:.4f}")
 
-    # Now re-apply the split indices to these new dataset instances
-    # We need to map the indices from the original un-transformed dataset to the new ones
-    # Since the file order in ImageFolder is deterministic (sorted), indices match.
-    train_set = Subset(train_final_dataset, train_indices)
-    val_set = Subset(val_final_dataset, val_indices)
+    # 5. Define Transforms using the calculated stats
+    train_transform = get_transforms(mean, std, train=True)
+    val_test_transform = get_transforms(mean, std, train=False)
 
-    # 5. Create DataLoaders
+    # 6. Create Final Datasets with Transforms
+    # We re-instantiate datasets to ensure clean transform application
+    train_base = CastingDataset(root_dir=str(train_dir), transform=train_transform)
+    val_base = CastingDataset(root_dir=str(train_dir), transform=val_test_transform)
+    test_base = CastingDataset(root_dir=str(test_dir), transform=val_test_transform)
+
+    # Apply the split indices to the new transformed datasets
+    train_set = Subset(train_base, train_indices)
+    val_set = Subset(val_base, val_indices)
+    test_set = test_base  # Test set is separate folder, no splitting needed
+
+    # 7. Create DataLoaders
+    # Note: num_workers=0 is safer for Windows/OneDrive. Increase to 4 if on local SSD.
     train_loader = DataLoader(
         train_set,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
-        drop_last=True,  # Drop last batch if it's smaller than batch_size (good for BatchNorm)
+        drop_last=True,
     )
 
     val_loader = DataLoader(
@@ -204,17 +214,17 @@ def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=4):
     )
 
     test_loader = DataLoader(
-        test_dataset,
+        test_set,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
     )
 
-    print("Data Ready:")
-    print(f"  - Train batches: {len(train_loader)} ({len(train_set)} samples)")
-    print(f"  - Val batches:   {len(val_loader)} ({len(val_set)} samples)")
-    print(f"  - Test batches:  {len(test_loader)} ({len(test_dataset)} samples)")
+    logger.info("Data Ready:")
+    logger.info(f"  - Train batches: {len(train_loader)} ({len(train_set)} samples)")
+    logger.info(f"  - Val batches:   {len(val_loader)} ({len(val_set)} samples)")
+    logger.info(f"  - Test batches:  {len(test_loader)} ({len(test_set)} samples)")
 
     return train_loader, val_loader, test_loader, classes
 
@@ -223,11 +233,11 @@ def get_device():
     """Selects the best available device (CUDA, MPS, or CPU)"""
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        print(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
+        logger.info(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         device = torch.device("mps")
-        print("✅ Using Apple Silicon GPU (MPS)")
+        logger.info("✅ Using Apple Silicon GPU (MPS)")
     else:
         device = torch.device("cpu")
-        print("⚠️  Using CPU")
+        logger.warning("⚠️  Using CPU")
     return device
