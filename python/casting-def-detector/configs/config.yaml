@@ -1,0 +1,56 @@
+# Configuration file for Casting Defect Detection Training
+# This YAML file contains all hyperparameters and settings for the training pipeline
+
+# Model Architecture Configuration
+model:
+  name: "casting_cnn" # Options: resnet18, resnet34, resnet50, vgg16, etc.
+  num_classes: 2 # Number of output classes (defect vs no-defect)
+  pretrained: true # Use ImageNet pretrained weights
+  dropout: 0.5 # Dropout rate for regularization
+  custom_params: {} # Additional model-specific parameters
+
+# Optimizer Configuration
+optimizer:
+  name: "adam" # Options: adam, sgd, rmsprop, adamw, adagrad
+  lr: 0.001 # Learning rate
+  weight_decay: 0.0001 # L2 regularization
+  momentum: 0.9 # Momentum for SGD
+  betas: [0.9, 0.999] # Beta parameters for Adam
+
+# Loss Function (Criterion) Configuration
+criterion:
+  name: "cross_entropy" # Options: cross_entropy, bce, mse, l1, etc.
+  label_smoothing: 0.1 # Label smoothing factor (0.0 = disabled)
+  reduction: "mean" # Reduction method: mean, sum, none
+
+# Data Pipeline Configuration
+data:
+  train_path: "data/train" # Path to training dataset
+  val_path: "data/val" # Path to validation dataset
+  test_path: "data/test" # Path to test dataset
+  batch_size: 32 # Batch size for training
+  num_workers: 4 # Number of data loading workers
+  img_size: [224, 224] # Input image dimensions (height, width)
+  augment: true # Enable data augmentation
+  config_path: "configs/statistics.json" # Path to saved mean/std statistics
+
+# Training Loop Configuration
+training:
+  epochs: 100 # Total number of training epochs
+  device: "auto" # Options: auto, cuda, cpu
+  seed: 42 # Random seed for reproducibility
+  early_stopping: true # Enable early stopping
+  patience: 10 # Epochs to wait before early stopping
+  save_dir: "./checkpoints" # Directory to save model checkpoints
+  experiment_name: "casting_defect_detection" # Base experiment name
+  run_name: null # Optional specific run name (null = auto-generated)
+
+# MLflow Experiment Tracking Configuration
+mlflow:
+  tracking_uri: "https://dagshub.com" # MLflow tracking server URI
+  experiment_name: "My-CNNs" # DagsHub experiment name
+  log_artifacts: true # Log model artifacts to MLflow
+  tags: # Custom tags for the experiment
+    project: "casting-defect-detector"
+    version: "1.0"
+    author: "MakabeD"
