@@ -26,6 +26,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_gpu_usage() -> str:
+    """
+    Get current GPU usage statistics.
+
+    Returns:
+        String containing GPU memory usage information, or message if GPU not available.
+    """
+    if not torch.cuda.is_available():
+        return "GPU not available"
+
+    device_count = torch.cuda.device_count()
+    gpu_info = []
+
+    for i in range(device_count):
+        allocated = torch.cuda.memory_allocated(i) / (1024 ** 2)
+        reserved = torch.cuda.memory_reserved(i) / (1024 ** 2)
+        max_allocated = torch.cuda.max_memory_allocated(i) / (1024 ** 2)
+        gpu_name = torch.cuda.get_device_name(i)
+
+        gpu_info.append(
+            f"GPU {i} ({gpu_name}): "
+            f"Allocated: {allocated:.1f}MB, Reserved: {reserved:.1f}MB, "
+            f"Max Allocated: {max_allocated:.1f}MB"
+        )
+
+    return "; ".join(gpu_info)
+
+
+def log_gpu_status(prefix: str = "") -> None:
+    """
+    Log GPU status to console.
+
+    Args:
+        prefix: Optional prefix to add before the GPU status message.
+    """
+    gpu_status = get_gpu_usage()
+    if prefix:
+        logger.info(f"{prefix} - {gpu_status}")
+    else:
+        logger.info(gpu_status)
+
+
 def init_mlflow_experiment(
     experiment_name: str = "casting-defect-detection",
     repo_owner: str = "MakabeD",
@@ -118,7 +160,10 @@ def train_one_epoch(
     total_loss = 0.0
     all_preds = []
     all_labels = []
-    print(dataloader)
+
+    # Log GPU status at the start of training epoch
+    log_gpu_status(prefix=f"Epoch {epoch} [Train] - Start")
+
     pbar = tqdm(dataloader, desc=f"Epoch {epoch} [Train]")
     for batch_idx, (inputs, labels) in enumerate(pbar):
         inputs, labels = inputs.to(device), labels.to(device)
@@ -185,8 +230,11 @@ def validate(
     all_preds = []
     all_labels = []
 
+    # Log GPU status at the start of validation
+    log_gpu_status(prefix=f"Epoch {epoch} [{phase}] - Start")
+
     pbar = tqdm(dataloader, desc=f"Epoch {epoch} [{phase}]")
-    for inputs, labels in pbar:
+    for batch_idx, (inputs, labels) in enumerate(pbar):
         inputs, labels = inputs.to(device), labels.to(device)
 
         outputs = model(inputs)
@@ -262,6 +310,9 @@ def train_loop(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
+
+    # Log initial GPU status
+    log_gpu_status(prefix="Initial GPU Status")
 
     # Setup loss and optimizer
     if criterion is None:
@@ -345,10 +396,6 @@ def _train_with_mlflow(
         mlflow.log_params(log_hyperparams)
         logger.info(f"Logged hyperparameters: {log_hyperparams}")
 
-    # Log model architecture
-    mlflow.pytorch.log_model(model, artifact_path="model_initial")
-    logger.info("Logged initial model architecture")
-
     best_val_loss = float("inf")
     best_model_state = None
     history = {"train": [], "val": [], "test": None}
@@ -387,15 +434,17 @@ def _train_with_mlflow(
         # Store history
         history["train"].append(train_metrics)
         history["val"].append(val_metrics)
-
         # Save best model
+        print("-----", val_metrics["val_loss"], best_val_loss)
         if val_metrics["val_loss"] < best_val_loss:
-            best_val_loss = val_metrics["val_loss"]
-            best_model_state = model.state_dict().copy()
-            logger.info(f"New best model saved with val_loss: {best_val_loss:.4f}")
+            if  epoch % 20 ==0:    
+                best_val_loss = val_metrics["val_loss"]
+                best_model_state = model.state_dict().copy()
+                logger.info(f"-> New best model saved with val_loss: {best_val_loss:.4f}")
 
-            # Log best model to MLflow
-            mlflow.pytorch.log_model(model, artifact_path="model_best")
+                # Log best model to MLflow
+                mlflow.pytorch.log_model(model, artifact_path=f"model_loss_{best_val_loss:.4f}", 
+                                         pip_requirements=["torch==2.11.0+cu126"], serialization_format="pt2")
 
     # Final evaluation on test set
     if test_loader is not None:

@@ -46,7 +46,7 @@ training:
 # MLflow Experiment Tracking Configuration
 mlflow:
   tracking_uri: "https://dagshub.com" # MLflow tracking server URI
-  experiment_name: "My-CNNs" # DagsHub experiment name
+  experiment_name: "My-CNNs_casting-defect-detection" # DagsHub experiment name
   log_artifacts: true # Log model artifacts to MLflow
   tags: # Custom tags for the experiment
     project: "casting-defect-detector"
