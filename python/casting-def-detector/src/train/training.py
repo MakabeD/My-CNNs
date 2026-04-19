@@ -468,10 +468,10 @@ if __name__ == "__main__":
         get_model = None
 
     try:
-        from pipeline.data_pipeline import create_dataloaders
+        from pipeline.data_pipeline import prepare_data
     except ImportError as e:
-        logger.warning(f"Could not import create_dataloaders: {e}")
-        create_dataloaders = None
+        logger.warning(f"Could not import prepare_data: {e}")
+        prepare_data = None
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
@@ -555,14 +555,9 @@ if __name__ == "__main__":
         from pipeline.data_pipeline import prepare_data
 
         train_loader, val_loader, test_loader,classes  = prepare_data(
-            train_path=config.data.train_path,
-            val_path=config.config.data.val_path if hasattr(config.data, 'val_path') else "",
-            test_path=config.data.test_path,
+            root_data_path=config.data.root_data_path,
             batch_size=config.data.batch_size,
             num_workers=config.data.num_workers,
-            img_size=config.data.img_size,
-            augment=config.data.augment,
-            stats_config_path=config.data.config_path,
         )
         logger.info("Data loaders created successfully!")
     except (ImportError, AttributeError) as e:

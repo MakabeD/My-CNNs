@@ -5,7 +5,7 @@
 model:
   name: "casting_cnn" # Options: resnet18, resnet34, resnet50, vgg16, etc.
   num_classes: 2 # Number of output classes (defect vs no-defect)
-  pretrained: true # Use ImageNet pretrained weights
+  pretrained: false # Use ImageNet pretrained weights
   dropout: 0.5 # Dropout rate for regularization
   custom_params: {} # Additional model-specific parameters
 
@@ -25,12 +25,10 @@ criterion:
 
 # Data Pipeline Configuration
 data:
-  train_path: "data/train" # Path to training dataset
-  val_path: "data/val" # Path to validation dataset
-  test_path: "data/test" # Path to test dataset
+  root_data_path: "./../../datasets/casting_data"
   batch_size: 32 # Batch size for training
   num_workers: 4 # Number of data loading workers
-  img_size: [224, 224] # Input image dimensions (height, width)
+  img_size: [300, 300] # Input image dimensions (height, width)
   augment: true # Enable data augmentation
   config_path: "configs/statistics.json" # Path to saved mean/std statistics
 

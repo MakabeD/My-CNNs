@@ -52,9 +52,7 @@ class ModelConfig:
 class DataConfig:
     """Configuration for data loading and augmentation."""
 
-    train_path: str = ""
-    val_path: str = ""
-    test_path: str = ""
+    root_data_path: str = ""
     batch_size: int = 32
     num_workers: int = 4
     img_size: tuple = (224, 224)
