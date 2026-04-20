@@ -301,9 +301,7 @@ def save_config(config: Config, save_path: str) -> None:
             "reduction": config.criterion.reduction,
         },
         "data": {
-            "train_path": config.data.train_path,
-            "val_path": config.data.val_path,
-            "test_path": config.data.test_path,
+            "root_data_path": config.data.root_data_path,
             "batch_size": config.data.batch_size,
             "num_workers": config.data.num_workers,
             "img_size": list(config.data.img_size),

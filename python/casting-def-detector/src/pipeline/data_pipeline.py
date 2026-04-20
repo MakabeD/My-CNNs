@@ -85,7 +85,7 @@ def save_statistics(config_path, mean, std, classes=None, additional_info=None):
     with open(config_path, "w") as f:
         json.dump(config_data, f, indent=4)
 
-    logger.info(f"📊 Statistics saved to {config_path}")
+    logger.info(f"Statistics saved to {config_path}")
 
 
 def load_statistics(config_path):
@@ -114,7 +114,7 @@ def load_statistics(config_path):
     if "mean" not in config_data or "std" not in config_data:
         raise ValueError("Config file must contain 'mean' and 'std' fields.")
 
-    logger.info(f"📊 Statistics loaded from {config_path}")
+    logger.info(f"Statistics loaded from {config_path}")
     return config_data
 
 
@@ -211,7 +211,7 @@ def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=0):
     train_dir = Path(root_data_path) / "train"
     test_dir = Path(root_data_path) / "test"
 
-    print(f"🔍 Looking for data in: {Path(root_data_path).absolute().resolve()}")
+    logger.info(f"Looking for data in: {Path(root_data_path).absolute().resolve()}")
     if not os.path.exists(train_dir) or not os.path.exists(test_dir):
         raise FileNotFoundError(
             f"Expected 'train' and 'test' folders inside {root_data_path}"
@@ -298,11 +298,11 @@ def get_device():
     """Selects the best available device (CUDA, MPS, or CPU)"""
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        logger.info(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
+        logger.info(f"Using GPU: {torch.cuda.get_device_name(0)}")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         device = torch.device("mps")
-        logger.info("✅ Using Apple Silicon GPU (MPS)")
+        logger.info("Using Apple Silicon GPU (MPS)")
     else:
         device = torch.device("cpu")
-        logger.warning("⚠️  Using CPU")
+        logger.warning("Using CPU")
     return device
