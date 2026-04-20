@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class CastingDefectCNN(nn.Module):
     def __init__(self, num_classes=2):
         """
@@ -23,7 +24,9 @@ class CastingDefectCNN(nn.Module):
         # Output: (Batch, 32, 150, 150) -> Halved dimensions
 
         # --- Convolutional Block 2 ---
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(
+            in_channels=32, out_channels=64, kernel_size=3, padding=1
+        )
         # Output: (Batch, 64, 150, 150)
         self.bn2 = nn.BatchNorm2d(64)
 
@@ -61,6 +64,97 @@ class CastingDefectCNN(nn.Module):
 
         return x
 
+
+def get_model(
+    model_name: str = "casting_cnn",
+    num_classes: int = 2,
+    pretrained: bool = False,
+    dropout: float = 0.5,
+    **kwargs,
+) -> nn.Module:
+    """
+    Factory function to create models by name.
+
+    Args:
+        model_name: Name of the model architecture.
+        num_classes: Number of output classes.
+        pretrained: Whether to use pretrained weights (for torchvision models).
+        dropout: Dropout rate.
+        **kwargs: Additional model-specific arguments.
+
+    Returns:
+        nn.Module: The instantiated model.
+
+    Raises:
+        ValueError: If model_name is not supported.
+    """
+    model_name_lower = model_name.lower()
+
+    if model_name_lower == "casting_cnn":
+        model = CastingDefectCNN(num_classes=num_classes)
+        if dropout != 0.5:
+            model.dropout = nn.Dropout(dropout)
+    elif model_name_lower in [
+        "resnet18",
+        "resnet34",
+        "resnet50",
+        "vgg16",
+        "efficientnet",
+    ]:
+        try:
+            import torchvision.models as models
+
+            if model_name_lower == "resnet18":
+                base_model = models.resnet18(
+                    weights=models.ResNet18_Weights.IMAGENET1K_V1
+                    if pretrained
+                    else None
+                )
+                base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
+            elif model_name_lower == "resnet34":
+                base_model = models.resnet34(
+                    weights=models.ResNet34_Weights.IMAGENET1K_V1
+                    if pretrained
+                    else None
+                )
+                base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
+            elif model_name_lower == "resnet50":
+                base_model = models.resnet50(
+                    weights=models.ResNet50_Weights.IMAGENET1K_V1
+                    if pretrained
+                    else None
+                )
+                base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
+            elif model_name_lower == "vgg16":
+                base_model = models.vgg16(
+                    weights=models.VGG16_Weights.IMAGENET1K_V1 if pretrained else None
+                )
+                base_model.classifier[6] = nn.Linear(4096, num_classes)
+            elif model_name_lower.startswith("efficientnet"):
+                base_model = models.efficientnet_b0(
+                    weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1
+                    if pretrained
+                    else None
+                )
+                base_model.classifier[1] = nn.Linear(
+                    base_model.classifier[1].in_features, num_classes
+                )
+            else:
+                raise ValueError(f"Unsupported torchvision model: {model_name}")
+
+            model = base_model
+        except ImportError:
+            raise ImportError(
+                "torchvision is required for pretrained models. Install with: pip install torchvision"
+            )
+    else:
+        raise ValueError(
+            f"Unsupported model: {model_name}. Supported: casting_cnn, resnet18, resnet34, resnet50, vgg16, efficientnet"
+        )
+
+    return model
+
+
 # --- Example Usage ---
 if __name__ == "__main__":
     # Initialize the model for binary classification (Ok vs Defective)
@@ -73,7 +167,7 @@ if __name__ == "__main__":
     output = model(dummy_input)
 
     print(f"Input shape: {dummy_input.shape}")
-    print(f"Output shape: {output.shape}") # Should be [4, 2] for binary classification
+    print(f"Output shape: {output.shape}")  # Should be [4, 2] for binary classification
     print(f"\nModel Architecture:")
     print(model)
     print(f"\nTotal parameters: {sum(p.numel() for p in model.parameters()):,}")

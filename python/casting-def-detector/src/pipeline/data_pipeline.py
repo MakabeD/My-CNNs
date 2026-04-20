@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.datasets import ImageFolder
 
-CONFIG_PATH = Path(__file__).parent.parent.parent.joinpath("config.json")
+CONFIG_PATH = Path(__file__).parent.parent.parent.joinpath("statistics.json")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -211,6 +211,7 @@ def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=0):
     train_dir = Path(root_data_path) / "train"
     test_dir = Path(root_data_path) / "test"
 
+    print(f"🔍 Looking for data in: {Path(root_data_path).absolute().resolve()}")
     if not os.path.exists(train_dir) or not os.path.exists(test_dir):
         raise FileNotFoundError(
             f"Expected 'train' and 'test' folders inside {root_data_path}"
