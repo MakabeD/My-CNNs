@@ -30,7 +30,7 @@ data:
   num_workers: 4 # Number of data loading workers
   img_size: [300, 300] # Input image dimensions (height, width)
   augment: true # Enable data augmentation
-  config_path: "configs/statistics.json" # Path to saved mean/std statistics
+  config_path: "./statistics.json" # Path to saved mean/std statistics
 
 # Training Loop Configuration
 training:

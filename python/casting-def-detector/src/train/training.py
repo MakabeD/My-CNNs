@@ -437,14 +437,12 @@ def _train_with_mlflow(
         # Save best model
         print("-----", val_metrics["val_loss"], best_val_loss)
         if val_metrics["val_loss"] < best_val_loss:
-            if  epoch % 20 ==0:    
-                best_val_loss = val_metrics["val_loss"]
-                best_model_state = model.state_dict().copy()
-                logger.info(f"-> New best model saved with val_loss: {best_val_loss:.4f}")
-
-                # Log best model to MLflow
-                mlflow.pytorch.log_model(model, artifact_path=f"model_loss_{best_val_loss:.4f}", 
-                                         pip_requirements=["torch==2.11.0+cu126"], serialization_format="pt2")
+            best_val_loss = val_metrics["val_loss"]
+            best_model_state = model.state_dict().copy()
+            logger.info(f"-> New best model saved with val_loss: {best_val_loss:.4f}")   
+            # Log best model to MLflow
+            mlflow.pytorch.log_model(model, name=f"best-model_epoch_{epoch}", 
+                                        pip_requirements=["torch==2.11.0+cu126"])
 
     # Final evaluation on test set
     if test_loader is not None:
@@ -664,6 +662,8 @@ if __name__ == "__main__":
         logger.info("Training Completed Successfully!")
         logger.info(f"Best Validation Loss: {results['best_val_loss']:.4f}")
         logger.info(f"MLflow Run ID: {results['run_id']}")
+        torch.save(results["model_state"], f"./models/casting-defects-best_model_{results['best_val_loss']:.4f}.pt")
+        logger.info(f"Best model saved to: ./models/casting-defects-best_model_{results['best_val_loss']:.4f}.pt")
         logger.info("=" * 60)
 
     except KeyboardInterrupt:
