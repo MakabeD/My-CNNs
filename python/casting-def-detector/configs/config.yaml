@@ -49,6 +49,6 @@ mlflow:
   experiment_name: "My-CNNs_casting-defect-detection" # DagsHub experiment name
   log_artifacts: true # Log model artifacts to MLflow
   tags: # Custom tags for the experiment
-    project: "casting-defect-detector"
+    project: "casting-defect-detector_v2"
     version: "1.0"
     author: "MakabeD"
