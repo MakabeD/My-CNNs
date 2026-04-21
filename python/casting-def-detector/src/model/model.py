@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class CastingDefectCNN(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=2, dropout=0.5):
         """
         Binary classification model for casting defect detection.
         Classes: 0 = Ok, 1 = Defective
@@ -15,29 +15,30 @@ class CastingDefectCNN(nn.Module):
         super(CastingDefectCNN, self).__init__()
 
         # --- Convolutional Block 1 ---
-        # Input: (Batch, 1, 300, 300) [Grayscale images, 300x300]
+        # Input: (Batch, 1, H, W) [Grayscale images]
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
-        # Output: (Batch, 32, 300, 300)
         self.bn1 = nn.BatchNorm2d(32)
-
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        # Output: (Batch, 32, 150, 150) -> Halved dimensions
 
         # --- Convolutional Block 2 ---
         self.conv2 = nn.Conv2d(
             in_channels=32, out_channels=64, kernel_size=3, padding=1
         )
-        # Output: (Batch, 64, 150, 150)
         self.bn2 = nn.BatchNorm2d(64)
-
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        # Output: (Batch, 64, 75, 75) -> Halved dimensions again
 
-        # --- Dense (Fully Connected) Layer ---
-        # We flatten the output from pool2: 64 channels * 75 height * 75 width
-        self.fc1 = nn.Linear(in_features=64 * 75 * 75, out_features=128)
-        self.dropout = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(in_features=128, out_features=num_classes)
+        # --- Convolutional Block 3 ---
+        self.conv3 = nn.Conv2d(
+            in_channels=64, out_channels=128, kernel_size=3, padding=1
+        )
+        self.bn3 = nn.BatchNorm2d(128)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # Adaptive pooling removes the dependency on a fixed input image size.
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc1 = nn.Linear(in_features=128, out_features=64)
+        self.dropout = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(in_features=64, out_features=num_classes)
 
     def forward(self, x):
         # Block 1: Conv -> BN -> ReLU -> MaxPool
@@ -52,8 +53,14 @@ class CastingDefectCNN(nn.Module):
         x = F.relu(x)
         x = self.pool2(x)
 
-        # Flatten the tensor for the dense layer
-        # Shape changes from (Batch, 64, 75, 75) to (Batch, 360000)
+        # Block 3: Conv -> BN -> ReLU -> MaxPool
+        x = self.conv3(x)
+        x = self.bn3(x)
+        x = F.relu(x)
+        x = self.pool3(x)
+
+        # Global pooling keeps the classifier small and input-size agnostic.
+        x = self.global_pool(x)
         x = x.view(x.size(0), -1)
 
         # Dense Layers
@@ -91,9 +98,7 @@ def get_model(
     model_name_lower = model_name.lower()
 
     if model_name_lower == "casting_cnn":
-        model = CastingDefectCNN(num_classes=num_classes)
-        if dropout != 0.5:
-            model.dropout = nn.Dropout(dropout)
+        model = CastingDefectCNN(num_classes=num_classes, dropout=dropout)
     elif model_name_lower in [
         "resnet18",
         "resnet34",
@@ -160,9 +165,9 @@ if __name__ == "__main__":
     # Initialize the model for binary classification (Ok vs Defective)
     model = CastingDefectCNN(num_classes=2)
 
-    # Create a dummy input tensor (Batch size=4, 1 Channel Grayscale, 300x300 Image)
-    # This matches the casting defect dataset specifications
-    dummy_input = torch.randn(4, 1, 300, 300)
+    # Create a dummy input tensor (Batch size=4, 1 Channel Grayscale, 256x256 Image)
+    # The adaptive pooling head allows different input sizes.
+    dummy_input = torch.randn(4, 1, 256, 256)
     # Forward pass
     output = model(dummy_input)
 

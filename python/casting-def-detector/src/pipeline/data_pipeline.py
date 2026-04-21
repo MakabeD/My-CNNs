@@ -118,7 +118,7 @@ def load_statistics(config_path):
     return config_data
 
 
-def calculate_mean_std_from_subset(dataset_subset, sample_size=2000):
+def calculate_mean_std_from_subset(dataset_subset, img_size=(300, 300), sample_size=2000):
     """
     Calculates mean and std ONLY from the provided subset (e.g., training subset).
     This prevents data leakage from validation/test sets.
@@ -129,7 +129,7 @@ def calculate_mean_std_from_subset(dataset_subset, sample_size=2000):
 
     # Basic transform just to get tensors (No augmentation, just resize/to_tensor)
     temp_transform = transforms.Compose(
-        [transforms.Grayscale(), transforms.Resize((300, 300)), transforms.ToTensor()]
+        [transforms.Grayscale(), transforms.Resize(img_size), transforms.ToTensor()]
     )
 
     # We need to access the underlying dataset and map the subset indices
@@ -173,10 +173,10 @@ def calculate_mean_std_from_subset(dataset_subset, sample_size=2000):
     return mean, std
 
 
-def get_transforms(mean, std, train=True):
+def get_transforms(mean, std, img_size=(300, 300), train=True):
     """Returns transforms with optional augmentation for training"""
     base_transforms = [
-        transforms.Resize((300, 300)),  # Enforce 300x300
+        transforms.Resize(img_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=[mean], std=[std]),
     ]
@@ -193,7 +193,9 @@ def get_transforms(mean, std, train=True):
     return transforms.Compose(base_transforms)
 
 
-def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=0):
+def prepare_data(
+    root_data_path, batch_size=32, val_split=0.2, num_workers=0, img_size=(300, 300)
+):
     """
     Main function to prepare DataLoaders.
     CRITICAL: Splits data FIRST, then calculates stats from TRAIN split ONLY.
@@ -203,6 +205,7 @@ def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=0):
         batch_size (int): Batch size for loaders.
         val_split (float): Fraction of training data to use for validation.
         num_workers (int): Number of subprocesses. Default 0 for Windows/OneDrive safety.
+        img_size (tuple): Image size as (height, width).
 
     Returns:
         train_loader, val_loader, test_loader, classes
@@ -241,12 +244,14 @@ def prepare_data(root_data_path, batch_size=32, val_split=0.2, num_workers=0):
     train_subset_for_stats = Subset(full_train_dataset, train_indices)
 
     # 4. Calculate Stats FROM THE TRAIN SUBSET ONLY (No Leakage!)
-    mean, std = calculate_mean_std_from_subset(train_subset_for_stats)
+    mean, std = calculate_mean_std_from_subset(
+        train_subset_for_stats, img_size=img_size
+    )
     logger.info(f"Calculated Stats (Train Only) -> Mean: {mean:.4f}, Std: {std:.4f}")
 
     # 5. Define Transforms using the calculated stats
-    train_transform = get_transforms(mean, std, train=True)
-    val_test_transform = get_transforms(mean, std, train=False)
+    train_transform = get_transforms(mean, std, img_size=img_size, train=True)
+    val_test_transform = get_transforms(mean, std, img_size=img_size, train=False)
 
     # 6. Create Final Datasets with Transforms
     # We re-instantiate datasets to ensure clean transform application

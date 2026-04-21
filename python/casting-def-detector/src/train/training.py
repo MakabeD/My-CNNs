@@ -571,6 +571,7 @@ if __name__ == "__main__":
             num_classes=config.model.num_classes,
             pretrained=config.model.pretrained,
             dropout=config.model.dropout,
+            img_size=config.data.img_size,
         )
         model = model.to(device)
         logger.info("Model created successfully!")
@@ -605,6 +606,7 @@ if __name__ == "__main__":
             root_data_path=config.data.root_data_path,
             batch_size=config.data.batch_size,
             num_workers=config.data.num_workers,
+            img_size=config.data.img_size,
         )
         logger.info("Data loaders created successfully!")
     except (ImportError, AttributeError) as e:
