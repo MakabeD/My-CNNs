@@ -11,8 +11,6 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.datasets import ImageFolder
 
-CONFIG_PATH = Path(__file__).parent.parent.parent.joinpath("statistics.json")
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - [%(levelname)s] - %(message)s",
@@ -118,7 +116,12 @@ def load_statistics(config_path):
     return config_data
 
 
-def calculate_mean_std_from_subset(dataset_subset, img_size=(300, 300), sample_size=2000):
+def calculate_mean_std_from_subset(
+    dataset_subset,
+    img_size=(300, 300),
+    sample_size=2000,
+    statistics_path="./statistics.json",
+):
     """
     Calculates mean and std ONLY from the provided subset (e.g., training subset).
     This prevents data leakage from validation/test sets.
@@ -169,7 +172,7 @@ def calculate_mean_std_from_subset(dataset_subset, img_size=(300, 300), sample_s
 
     mean /= effective_size * 1.0  # 1 channel
     std /= effective_size * 1.0
-    save_statistics(CONFIG_PATH, mean, std)
+    save_statistics(statistics_path, mean, std)
     return mean, std
 
 
