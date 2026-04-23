@@ -10,15 +10,13 @@ The repository already includes a full training pipeline instead of just a noteb
 - Experiment tracking with MLflow and DagsHub
 - DVC-managed datasets and trained model artifacts
 
-## Project Structure
+## Project Structure, train pipeline
 
 - `datasets/`: dataset files tracked with DVC
-- `python/casting-def-detector/configs/config.yaml`: training configuration
-- `python/casting-def-detector/src/pipeline/data_pipeline.py`: dataloaders, transforms, and dataset statistics
-- `python/casting-def-detector/src/model/model.py`: model definitions and model factory
-- `python/casting-def-detector/src/train/training.py`: training, validation, metrics, and MLflow logging
-- `python/casting-def-detector/src/utils/config.py`: config parsing plus optimizer and criterion builders
-- `python/casting-def-detector/models/`: saved model artifacts tracked with DVC
+- `python/CNN_Pipeline/src/pipeline/data_pipeline.py`: dataloaders, transforms, and dataset statistics
+- `python/CNN_Pipeline/src/model/model.py`: model definitions and model factory
+- `python/CNN_Pipeline/src/train/training.py`: training, validation, metrics, and MLflow logging
+- `python/CNN_Pipeline/src/utils/config.py`: config parsing plus optimizer and criterion builders
 
 ## Dataset
 
@@ -51,15 +49,15 @@ The training pipeline creates a validation split from the training set and compu
 
 ## How To Train
 
-Main config:
+Make a Main config like :
 
-`python/casting-def-detector/configs/config.yaml`
+`your/path/configs/config.yaml`
 
 Run from the project root:
 
 ```powershell
-cd python/casting-def-detector
-python src/train/training.py --config configs/config.yaml
+cd python/CNN_Pipeline
+python ../CNN_Pipeline/train.py --config configs/config.yaml
 ```
 
 ## Current Training Setup
@@ -76,5 +74,5 @@ python src/train/training.py --config configs/config.yaml
 The repository already includes:
 
 - DVC tracking for datasets and model outputs
-- Saved normalization statistics in `python/casting-def-detector/statistics.json`
+- Saved normalization statistics in `python/CNN_Pipeline/statistics.json`
 - Centralized configuration in YAML
