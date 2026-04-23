@@ -189,9 +189,12 @@ class main:
             logger.info("Training Completed Successfully!")
             logger.info(f"Best Validation Loss: {results['best_val_loss']:.4f}")
             logger.info(f"MLflow Run ID: {results['run_id']}")
+            savedir = Path(config.training.save_dir)
+            file_name = f"casting-defects-best_model_{results['best_val_loss']:.4f}.pt"
+            save_path = savedir.joinpath(file_name)
             torch.save(
                 results["model_state"],
-                f"./models/casting-defects-best_model_{results['best_val_loss']:.4f}.pt",
+                save_path,
             )
             logger.info(
                 f"Best model saved to: ./models/casting-defects-best_model_{results['best_val_loss']:.4f}.pt"

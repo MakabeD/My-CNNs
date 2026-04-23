@@ -39,7 +39,7 @@ training:
   seed: 42 # Random seed for reproducibility
   early_stopping: true # Enable early stopping
   patience: 10 # Epochs to wait before early stopping
-  save_dir: "./checkpoints" # Directory to save model checkpoints
+  save_dir: "./models" # Directory to save model checkpoints
   experiment_name: "casting_defect_detection" # Base experiment name
   run_name: null # Optional specific run name (null = auto-generated)
 
