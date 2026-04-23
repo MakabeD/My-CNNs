@@ -1,7 +1,6 @@
 import argparse
 import logging
 import sys
-import traceback
 from pathlib import Path
 
 import torch
@@ -44,7 +43,7 @@ def load_training_config(config_path: str) -> Config:
         logger.error(f"Configuration file not found: {exc}")
         sys.exit(1)
     except Exception as exc:
-        logger.error(f"Error loading configuration: {exc}")
+        logger.exception(f"Unexpected error loading configuration: {exc}")
         sys.exit(1)
 
 
@@ -84,9 +83,11 @@ def build_model(config: Config, device: torch.device) -> nn.Module:
         model = model.to(device)
         logger.info("Model created successfully!")
         return model
-    except ImportError:
+    except ImportError as exc:
         logger.warning(
-            "Model module not found. Please implement get_model() in model/model.py"
+            "Could not import get_model (%s). Please implement get_model() in "
+            "model/model.py",
+            exc,
         )
         model = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
@@ -116,7 +117,7 @@ def build_dataloaders(config: Config):
     except (ImportError, AttributeError) as exc:
         logger.warning(f"Could not create dataloaders: {exc}")
         logger.warning(
-            "Please implement create_dataloaders() in pipeline/data_pipeline.py"
+            "Please implement prepare_data() in pipeline/data_pipeline.py"
         )
 
         from torch.utils.data import DataLoader, TensorDataset
@@ -213,8 +214,7 @@ def main() -> None:
         logger.info("Training interrupted by user")
         sys.exit(0)
     except Exception as exc:
-        logger.error(f"Training failed with error: {exc}")
-        traceback.print_exc()
+        logger.exception(f"Training failed with error: {exc}")
         sys.exit(1)
 
 
