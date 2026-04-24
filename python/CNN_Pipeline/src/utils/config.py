@@ -58,6 +58,7 @@ class DataConfig:
     img_size: tuple = (224, 224)
     augment: bool = True
     config_path: Optional[str] = None  # Path to statistics config
+    split_test: bool = True  # Whether to split the test set for validation (if false, requires having a 'val' folder)
 
     def __post_init__(self):
         if isinstance(self.img_size, list):

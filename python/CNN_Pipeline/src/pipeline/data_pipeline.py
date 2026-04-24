@@ -197,7 +197,7 @@ def get_transforms(mean, std, img_size=(300, 300), train=True):
 
 
 def prepare_data(
-    root_data_path, batch_size=32, val_split=0.2, num_workers=0, img_size=(300, 300)
+    root_data_path, batch_size=32, val_split=0.2, num_workers=0, img_size=(300, 300), split_test=True
 ):
     """
     Main function to prepare DataLoaders.
@@ -209,13 +209,14 @@ def prepare_data(
         val_split (float): Fraction of training data to use for validation.
         num_workers (int): Number of subprocesses. Default 0 for Windows/OneDrive safety.
         img_size (tuple): Image size as (height, width).
-
+        split_test (bool): Whether to split the test set. If False, you need to have a separate 'val' folder. Default True.
     Returns:
         train_loader, val_loader, test_loader, classes
     """
 
     train_dir = Path(root_data_path) / "train"
     test_dir = Path(root_data_path) / "test"
+    val_dir = Path(root_data_path) / "val"
 
     logger.info(f"Looking for data in: {Path(root_data_path).absolute().resolve()}")
     if not os.path.exists(train_dir) or not os.path.exists(test_dir):
@@ -227,25 +228,26 @@ def prepare_data(
     full_train_dataset = CastingDataset(root_dir=str(train_dir), transform=None)
     classes = full_train_dataset.classes
     logger.info(f"Classes found: {classes}")
+    if split_test:
+        # 2. Split Indices FIRST (Stratified to keep class balance)
+        labels = [label for _, label in full_train_dataset.dataset.samples]
 
-    # 2. Split Indices FIRST (Stratified to keep class balance)
-    labels = [label for _, label in full_train_dataset.dataset.samples]
+        train_indices, val_indices = train_test_split(
+            list(range(len(full_train_dataset))),
+            test_size=val_split,
+            stratify=labels,
+            random_state=42,  # Reproducible splits
+        )
 
-    train_indices, val_indices = train_test_split(
-        list(range(len(full_train_dataset))),
-        test_size=val_split,
-        stratify=labels,
-        random_state=42,  # Reproducible splits
-    )
+        logger.info(
+            f"Split complete: {len(train_indices)} Train, {len(val_indices)} Val samples."
+        )
 
-    logger.info(
-        f"Split complete: {len(train_indices)} Train, {len(val_indices)} Val samples."
-    )
-
-    # 3. Create Subsets based on indices
-    # We create temporary subsets just to pass to the stats calculator
-    train_subset_for_stats = Subset(full_train_dataset, train_indices)
-
+        # 3. Create Subsets based on indices
+        # We create temporary subsets just to pass to the stats calculator
+        train_subset_for_stats = Subset(full_train_dataset, train_indices)
+    else:
+        train_subset_for_stats = full_train_dataset  # Use all training data for stats if no split
     # 4. Calculate Stats FROM THE TRAIN SUBSET ONLY (No Leakage!)
     mean, std = calculate_mean_std_from_subset(
         train_subset_for_stats, img_size=img_size
@@ -259,12 +261,12 @@ def prepare_data(
     # 6. Create Final Datasets with Transforms
     # We re-instantiate datasets to ensure clean transform application
     train_base = CastingDataset(root_dir=str(train_dir), transform=train_transform)
-    val_base = CastingDataset(root_dir=str(train_dir), transform=val_test_transform)
+    val_base = CastingDataset(root_dir=str(train_dir if split_test else val_dir), transform=val_test_transform)
     test_base = CastingDataset(root_dir=str(test_dir), transform=val_test_transform)
 
     # Apply the split indices to the new transformed datasets
-    train_set = Subset(train_base, train_indices)
-    val_set = Subset(val_base, val_indices)
+    train_set = Subset(train_base, train_indices) if split_test else train_base
+    val_set = Subset(val_base, val_indices) if split_test else val_base
     test_set = test_base  # Test set is separate folder, no splitting needed
 
     # 7. Create DataLoaders
