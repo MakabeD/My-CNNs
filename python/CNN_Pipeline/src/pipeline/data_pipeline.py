@@ -135,9 +135,13 @@ def calculate_mean_std_from_subset(
         [transforms.Grayscale(), transforms.Resize(img_size), transforms.ToTensor()]
     )
 
-    # We need to access the underlying dataset and map the subset indices
-    base_dataset = dataset_subset.dataset
-    indices = dataset_subset.indices
+    # Support both a torch.utils.data.Subset and a raw dataset instance.
+    if isinstance(dataset_subset, Subset):
+        base_dataset = dataset_subset.dataset
+        indices = dataset_subset.indices
+    else:
+        base_dataset = dataset_subset
+        indices = list(range(len(dataset_subset)))
 
     total_len = len(indices)
     if total_len > sample_size:
@@ -223,6 +227,10 @@ def prepare_data(
         raise FileNotFoundError(
             f"Expected 'train' and 'test' folders inside {root_data_path}"
         )
+    if not split_test and not os.path.exists(val_dir):
+        raise FileNotFoundError(
+            f"Expected a separate 'val' folder inside {root_data_path} when split_test is false"
+        )
 
     # 1. Load Raw Training Dataset (no transforms yet)
     full_train_dataset = CastingDataset(root_dir=str(train_dir), transform=None)
@@ -247,6 +255,7 @@ def prepare_data(
         # We create temporary subsets just to pass to the stats calculator
         train_subset_for_stats = Subset(full_train_dataset, train_indices)
     else:
+        logger.info("Using separate validation folder; statistics will be computed from the full training set.")
         train_subset_for_stats = full_train_dataset  # Use all training data for stats if no split
     # 4. Calculate Stats FROM THE TRAIN SUBSET ONLY (No Leakage!)
     mean, std = calculate_mean_std_from_subset(
