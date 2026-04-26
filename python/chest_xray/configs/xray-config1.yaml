@@ -3,7 +3,7 @@
 
 # Model Architecture Configuration
 model:
-  name: "casting_cnn" # Options: resnet18, resnet34, resnet50, vgg16, etc.
+  name: "chest_xray" # Options: resnet18, resnet34, resnet50, vgg16, etc.
   num_classes: 2 # Number of output classes (defect vs no-defect)
   pretrained: false # Use ImageNet pretrained weights
   dropout: 0.5 # Dropout rate for regularization
@@ -25,13 +25,13 @@ criterion:
 
 # Data Pipeline Configuration
 data:
-  root_data_path: "./../../datasets/casting_data"
+  root_data_path: "./../../datasets/chest_xray_data/split_data"
   batch_size: 32 # Batch size for training
   num_workers: 4 # Number of data loading workers
-  img_size: [300, 300] # Input image dimensions (height, width)
-  augment: true # Enable data augmentation
+  img_size: [224, 224] # Input image dimensions (height, width)
+  augment: false # Enable data augmentation
   config_path: "./statistics.json" # Path to saved mean/std statistics
-  split_test: true # Whether to split the test set for validation (if false, requires having a 'val' folder)
+  split_test: false # Whether to split the test set for validation (if false, requires having a 'val' folder)
 # Training Loop Configuration
 training:
   epochs: 100 # Total number of training epochs
@@ -40,15 +40,15 @@ training:
   early_stopping: true # Enable early stopping
   patience: 10 # Epochs to wait before early stopping
   save_dir: "./models" # Directory to save model checkpoints
-  experiment_name: "casting_defect_detection" # Base experiment name
-  run_name: null # Optional specific run name (null = auto-generated)
+  experiment_name: "NA" # Base experiment name
+  run_name: "xray_test" # Optional specific run name (null = auto-generated)
 
 # MLflow Experiment Tracking Configuration
 mlflow:
   tracking_uri: "https://dagshub.com" # MLflow tracking server URI
-  experiment_name: "My-CNNs_casting-defect-detection" # DagsHub experiment name
+  experiment_name: "My-CNNs_chest-xray_tests" # DagsHub experiment name
   log_artifacts: true # Log model artifacts to MLflow
   tags: # Custom tags for the experiment
-    project: "casting-defect-detector_v2"
+    project: "chest-xray-test"
     version: "1.0"
     author: "MakabeD"

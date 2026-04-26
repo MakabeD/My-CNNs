@@ -111,15 +111,13 @@ def build_dataloaders(config: Config):
             batch_size=config.data.batch_size,
             num_workers=config.data.num_workers,
             img_size=config.data.img_size,
-            split_test=config.data.split_test
+            split_test=config.data.split_test,
         )
         logger.info("Data loaders created successfully!")
         return train_loader, val_loader, test_loader, classes
     except (ImportError, AttributeError) as exc:
         logger.warning(f"Could not create dataloaders: {exc}")
-        logger.warning(
-            "Please implement prepare_data() in pipeline/data_pipeline.py"
-        )
+        logger.warning("Please implement prepare_data() in pipeline/data_pipeline.py")
 
         from torch.utils.data import DataLoader, TensorDataset
 
@@ -159,7 +157,7 @@ def save_best_model(config: Config, results: dict[str, object]) -> None:
 
     torch.save(results["model_state"], save_path)
     logger.info(
-        f"Best model saved to: ./models/casting-defects-best_model_{results['best_val_loss']:.4f}.pt"
+        f"Best model saved to: {save_path} with validation loss: {results['best_val_loss']:.4f}"
     )
 
 
@@ -192,8 +190,7 @@ def run_training(config: Config) -> None:
         num_epochs=config.training.epochs,
         device=device,
         experiment_name=config.mlflow.experiment_name,
-        run_name=config.training.run_name
-        or f"{config.training.experiment_name}_{config.model.name}",
+        run_name=config.training.run_name,
         log_hyperparams=hyperparams,
     )
 
