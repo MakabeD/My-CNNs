@@ -32,6 +32,7 @@ data:
   augment: false # Enable data augmentation
   config_path: "./statistics.json" # Path to saved mean/std statistics
   split_test: false # Whether to split the test set for validation (if false, requires having a 'val' folder)
+  three_gray_channels: false # Whether to convert grayscale images to three channels
 # Training Loop Configuration
 training:
   epochs: 100 # Total number of training epochs
