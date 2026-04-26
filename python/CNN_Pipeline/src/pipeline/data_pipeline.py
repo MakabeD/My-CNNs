@@ -180,13 +180,22 @@ def calculate_mean_std_from_subset(
     return mean, std
 
 
-def get_transforms(mean, std, img_size=(300, 300), train=True):
+def get_transforms(mean, std, img_size=(300, 300), train=True, three_gray_channels=False):
     """Returns transforms with optional augmentation for training"""
-    base_transforms = [
+    if three_gray_channels:
+        base_transforms = [
         transforms.Resize(img_size),
+        transforms.Grayscale(num_output_channels=3),  # Convert to 3 identical channels
         transforms.ToTensor(),
-        transforms.Normalize(mean=[mean], std=[std]),
+        transforms.Normalize(mean=[mean, mean, mean], std=[std, std, std]),
     ]
+    else:
+        
+        base_transforms = [
+            transforms.Resize(img_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[mean], std=[std]),
+        ]
 
     if train:
         # Insert augmentations before ToTensor/Normalize
@@ -201,7 +210,7 @@ def get_transforms(mean, std, img_size=(300, 300), train=True):
 
 
 def prepare_data(
-    root_data_path, batch_size=32, val_split=0.2, num_workers=0, img_size=(300, 300), split_test=True
+    root_data_path, batch_size=32, val_split=0.2, num_workers=0, img_size=(300, 300), split_test=True, three_gray_channels=False
 ):
     """
     Main function to prepare DataLoaders.
@@ -214,6 +223,7 @@ def prepare_data(
         num_workers (int): Number of subprocesses. Default 0 for Windows/OneDrive safety.
         img_size (tuple): Image size as (height, width).
         split_test (bool): Whether to split the test set. If False, you need to have a separate 'val' folder. Default True.
+        three_gray_channels (bool): Whether to convert grayscale images to three channels. Default False.
     Returns:
         train_loader, val_loader, test_loader, classes
     """
@@ -264,8 +274,8 @@ def prepare_data(
     logger.info(f"Calculated Stats (Train Only) -> Mean: {mean:.4f}, Std: {std:.4f}")
 
     # 5. Define Transforms using the calculated stats
-    train_transform = get_transforms(mean, std, img_size=img_size, train=True)
-    val_test_transform = get_transforms(mean, std, img_size=img_size, train=False)
+    train_transform = get_transforms(mean, std, img_size=img_size, train=True, three_gray_channels=three_gray_channels)
+    val_test_transform = get_transforms(mean, std, img_size=img_size, train=False, three_gray_channels=three_gray_channels)
 
     # 6. Create Final Datasets with Transforms
     # We re-instantiate datasets to ensure clean transform application

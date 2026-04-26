@@ -59,7 +59,7 @@ class DataConfig:
     augment: bool = True
     config_path: Optional[str] = None  # Path to statistics config
     split_test: bool = True  # Whether to split the test set for validation (if false, requires having a 'val' folder)
-
+    three_gray_channels: bool = False  # Whether to convert grayscale images to three channels
     def __post_init__(self):
         if isinstance(self.img_size, list):
             self.img_size = tuple(self.img_size)

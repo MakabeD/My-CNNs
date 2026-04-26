@@ -1,0 +1,55 @@
+# Configuration file for Casting Defect Detection Training
+# This YAML file contains all hyperparameters and settings for the training pipeline
+
+# Model Architecture Configuration
+model:
+  name: "resnet18" # Options: resnet18, resnet34, resnet50, vgg16, etc.
+  num_classes: 2 # Number of output classes (defect vs no-defect)
+  pretrained: true # Use ImageNet pretrained weights
+  dropout: 0.5 # Dropout rate for regularization
+  custom_params: {} # Additional model-specific parameters
+
+# Optimizer Configuration
+optimizer:
+  name: "adam" # Options: adam, sgd, rmsprop, adamw, adagrad
+  lr: 0.001 # Learning rate
+  weight_decay: 0.0001 # L2 regularization
+  momentum: 0.9 # Momentum for SGD
+  betas: [0.9, 0.999] # Beta parameters for Adam
+
+# Loss Function (Criterion) Configuration
+criterion:
+  name: "cross_entropy" # Options: cross_entropy, bce, mse, l1, etc.
+  label_smoothing: 0.1 # Label smoothing factor (0.0 = disabled)
+  reduction: "mean" # Reduction method: mean, sum, none
+
+# Data Pipeline Configuration
+data:
+  root_data_path: "./../../datasets/chest_xray_data/split_data"
+  batch_size: 32 # Batch size for training
+  num_workers: 4 # Number of data loading workers
+  img_size: [224, 224] # Input image dimensions (height, width)
+  augment: false # Enable data augmentation
+  config_path: "./statistics.json" # Path to saved mean/std statistics
+  split_test: false # Whether to split the test set for validation (if false, requires having a 'val' folder)
+  three_gray_channels: true # Whether to convert grayscale images to three channels
+# Training Loop Configuration
+training:
+  epochs: 100 # Total number of training epochs
+  device: "auto" # Options: auto, cuda, cpu
+  seed: 42 # Random seed for reproducibility
+  early_stopping: true # Enable early stopping
+  patience: 10 # Epochs to wait before early stopping
+  save_dir: "./models" # Directory to save model checkpoints
+  experiment_name: "NA" # Base experiment name
+  run_name: "xray_test_resnet18" # Optional specific run name (null = auto-generated)
+
+# MLflow Experiment Tracking Configuration
+mlflow:
+  tracking_uri: "https://dagshub.com" # MLflow tracking server URI
+  experiment_name: "My-CNNs_chest-xray_tests_resnet18" # DagsHub experiment name
+  log_artifacts: true # Log model artifacts to MLflow
+  tags: # Custom tags for the experiment
+    project: "xray_test_resnet18"
+    version: "1.0"
+    author: "MakabeD"

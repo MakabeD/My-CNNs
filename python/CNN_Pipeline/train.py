@@ -112,6 +112,7 @@ def build_dataloaders(config: Config):
             num_workers=config.data.num_workers,
             img_size=config.data.img_size,
             split_test=config.data.split_test,
+            three_gray_channels=config.data.three_gray_channels,
         )
         logger.info("Data loaders created successfully!")
         return train_loader, val_loader, test_loader, classes
