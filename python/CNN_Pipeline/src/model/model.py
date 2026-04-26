@@ -140,6 +140,31 @@ class ChestXray(nn.Module):
 
         return x
 
+def _change_head(model: nn.Module, num_classes: int) -> nn.Module:
+    """
+    Helper function to change the classification head of a pretrained model.
+
+    Args:
+        model: The base model with a pretrained head.
+        num_classes: The number of output classes for the new head.
+
+    Returns:
+        The model with the modified classification head.
+    """
+    if hasattr(model, "fc"):
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
+    elif hasattr(model, "classifier") and isinstance(model.classifier, nn.Sequential):
+        # For models like VGG and EfficientNet
+        if isinstance(model.classifier[-1], nn.Linear):
+            in_features = model.classifier[-1].in_features
+            model.classifier[-1] = nn.Linear(in_features, num_classes)
+        else:
+            raise ValueError("Unsupported classifier structure for modifying head.")
+    else:
+        raise ValueError("Model does not have a recognizable classification head.")
+    
+    return model
 
 def get_model(
     model_name: str = "casting_cnn",
@@ -182,33 +207,33 @@ def get_model(
 
             if model_name_lower == "resnet18":
                 base_model = models.resnet18(
-                    weights=models.ResNet18_Weights.IMAGENET1K_V1
+                    weights=models.ResNet18_Weights.DEFAULT
                     if pretrained
                     else None
                 )
                 base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "resnet34":
                 base_model = models.resnet34(
-                    weights=models.ResNet34_Weights.IMAGENET1K_V1
+                    weights=models.ResNet34_Weights.DEFAULT
                     if pretrained
                     else None
                 )
                 base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "resnet50":
                 base_model = models.resnet50(
-                    weights=models.ResNet50_Weights.IMAGENET1K_V1
+                    weights=models.ResNet50_Weights.DEFAULT
                     if pretrained
                     else None
                 )
                 base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "vgg16":
                 base_model = models.vgg16(
-                    weights=models.VGG16_Weights.IMAGENET1K_V1 if pretrained else None
+                    weights=models.VGG16_Weights.DEFAULT if pretrained else None
                 )
                 base_model.classifier[6] = nn.Linear(4096, num_classes)
             elif model_name_lower.startswith("efficientnet"):
                 base_model = models.efficientnet_b0(
-                    weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1
+                    weights=models.EfficientNet_B0_Weights.DEFAULT
                     if pretrained
                     else None
                 )
@@ -217,7 +242,11 @@ def get_model(
                 )
             else:
                 raise ValueError(f"Unsupported torchvision model: {model_name}")
-
+            if pretrained:
+                for param in base_model.parameters():
+                    param.requires_grad = False
+            
+            base_model=_change_head(base_model,num_classes)
             model = base_model
         except ImportError:
             raise ImportError(

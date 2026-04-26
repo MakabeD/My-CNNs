@@ -168,7 +168,7 @@ def run_training(config: Config) -> None:
     model = build_model(config, device)
 
     logger.info(f"Creating optimizer: {config.optimizer.name}")
-    optimizer = build_optimizer(config.optimizer, model)
+    optimizer = build_optimizer(config.optimizer, model, config.model.pretrained)
 
     logger.info(f"Creating criterion: {config.criterion.name}")
     criterion = build_criterion(config.criterion)

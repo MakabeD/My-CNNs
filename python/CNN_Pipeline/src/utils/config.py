@@ -226,7 +226,7 @@ def get_criterion_class(name: str):
     return criteria[name_lower]
 
 
-def build_optimizer(optimizer_config: OptimizerConfig, model):
+def build_optimizer(optimizer_config: OptimizerConfig, model, pretrained: bool = False):
     """
     Build optimizer from configuration.
 
@@ -250,7 +250,9 @@ def build_optimizer(optimizer_config: OptimizerConfig, model):
     else:
         kwargs["weight_decay"] = optimizer_config.weight_decay
 
-    return optimizer_class(model.parameters(), **kwargs)
+    return optimizer_class(model.parameters(), **kwargs) if not pretrained else optimizer_class(
+        filter(lambda p: p.requires_grad, model.parameters()), **kwargs
+    )
 
 
 def build_criterion(criterion_config: CriterionConfig):
