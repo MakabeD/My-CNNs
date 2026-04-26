@@ -58,7 +58,8 @@ class DataConfig:
     img_size: tuple = (224, 224)
     augment: bool = True
     config_path: Optional[str] = None  # Path to statistics config
-
+    split_test: bool = True  # Whether to split the test set for validation (if false, requires having a 'val' folder)
+    three_gray_channels: bool = False  # Whether to convert grayscale images to three channels
     def __post_init__(self):
         if isinstance(self.img_size, list):
             self.img_size = tuple(self.img_size)
@@ -225,7 +226,7 @@ def get_criterion_class(name: str):
     return criteria[name_lower]
 
 
-def build_optimizer(optimizer_config: OptimizerConfig, model):
+def build_optimizer(optimizer_config: OptimizerConfig, model, pretrained: bool = False):
     """
     Build optimizer from configuration.
 
@@ -249,7 +250,9 @@ def build_optimizer(optimizer_config: OptimizerConfig, model):
     else:
         kwargs["weight_decay"] = optimizer_config.weight_decay
 
-    return optimizer_class(model.parameters(), **kwargs)
+    return optimizer_class(model.parameters(), **kwargs) if not pretrained else optimizer_class(
+        filter(lambda p: p.requires_grad, model.parameters()), **kwargs
+    )
 
 
 def build_criterion(criterion_config: CriterionConfig):
@@ -301,9 +304,7 @@ def save_config(config: Config, save_path: str) -> None:
             "reduction": config.criterion.reduction,
         },
         "data": {
-            "train_path": config.data.train_path,
-            "val_path": config.data.val_path,
-            "test_path": config.data.test_path,
+            "root_data_path": config.data.root_data_path,
             "batch_size": config.data.batch_size,
             "num_workers": config.data.num_workers,
             "img_size": list(config.data.img_size),
