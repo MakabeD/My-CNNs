@@ -42,14 +42,14 @@ training:
   patience: 10 # Epochs to wait before early stopping
   save_dir: "./models" # Directory to save model checkpoints
   experiment_name: "NA" # Base experiment name
-  run_name: "xray_test" # Optional specific run name (null = auto-generated)
+  run_name: "chest-xray-own" # Optional specific run name (null = auto-generated)
 
 # MLflow Experiment Tracking Configuration
 mlflow:
   tracking_uri: "https://dagshub.com" # MLflow tracking server URI
-  experiment_name: "My-CNNs_chest-xray_tests" # DagsHub experiment name
+  experiment_name: "My-CNNs_chest_xray" # DagsHub experiment name
   log_artifacts: true # Log model artifacts to MLflow
   tags: # Custom tags for the experiment
-    project: "chest-xray-test"
+    project: "chest-xray-own"
     version: "1.0"
     author: "MakabeD"

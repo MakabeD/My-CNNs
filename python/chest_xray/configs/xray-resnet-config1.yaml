@@ -47,7 +47,7 @@ training:
 # MLflow Experiment Tracking Configuration
 mlflow:
   tracking_uri: "https://dagshub.com" # MLflow tracking server URI
-  experiment_name: "My-CNNs_chest-xray_tests_resnet18" # DagsHub experiment name
+  experiment_name: "My-CNNs_chest_xray" # DagsHub experiment name
   log_artifacts: true # Log model artifacts to MLflow
   tags: # Custom tags for the experiment
     project: "xray_test_resnet18"
