@@ -128,13 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--statistics",
-        default=None,
+        default="./statistics.json",
         help="Optional path to the statistics JSON file.",
     )
     parser.add_argument(
         "--class-names",
         nargs="*",
-        default=None,
+        default=["anomaly", "normal"],
         help="Optional class names to override config/statistics classes.",
     )
     parser.add_argument(
