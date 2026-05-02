@@ -153,7 +153,7 @@ def build_hyperparams(config: Config) -> dict[str, object]:
 
 def save_best_model(config: Config, results: dict[str, object]) -> None:
     savedir = Path(config.training.save_dir)
-    file_name = f"casting-defects-best_model_{results['best_val_loss']:.4f}.pt"
+    file_name = f"{config.training.run_name}-best_model_{results['best_val_loss']:.4f}.pt"
     save_path = savedir.joinpath(file_name)
 
     torch.save(results["model_state"], save_path)

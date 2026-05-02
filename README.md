@@ -1,78 +1,174 @@
 # My-CNN
 
-PyTorch project for binary classification of industrial casting images into defective and non-defective classes.
+A modular PyTorch pipeline for training and deploying CNN-based image classification models. Currently supports **casting defect detection** and **chest X-ray classification**, with a roadmap toward a unified service API.
 
-The repository already includes a full training pipeline instead of just a notebook or a single script:
+## Overview
+
+My-CNN is designed as a reusable training and inference framework. Each domain (casting defects, chest X-rays) lives as its own module under `python/`, sharing a common core pipeline (`cnn_pipeline`) that handles:
 
 - Config-driven training with YAML
-- A custom CNN and support for popular torchvision backbones
-- Data preparation with grayscale conversion, normalization, augmentation, and train/validation splitting
+- Custom CNNs and torchvision backbones (ResNet, VGG, EfficientNet)
+- Data preparation with grayscale handling, normalization, augmentation, and stratified splits
 - Experiment tracking with MLflow and DagsHub
-- DVC-managed datasets and trained model artifacts
+- Dataset and model versioning with DVC
 
-## Project Structure, train pipeline
+## Project Structure
 
-- `datasets/`: dataset files tracked with DVC
-- `python/CNN_Pipeline/src/pipeline/data_pipeline.py`: dataloaders, transforms, and dataset statistics
-- `python/CNN_Pipeline/src/model/model.py`: model definitions and model factory
-- `python/CNN_Pipeline/src/train/training.py`: training, validation, metrics, and MLflow logging
-- `python/CNN_Pipeline/src/utils/config.py`: config parsing plus optimizer and criterion builders
-
-## Dataset
-
-Source:
-
-[Real Life Industrial Dataset of Casting Product](https://www.kaggle.com/datasets/ravirajsinh45/real-life-industrial-dataset-of-casting-product)
-
-Classes:
-
-1. `def_front`
-2. `ok_front`
-
-Repository dataset summary:
-
-- Train: `def_front = 3758`, `ok_front = 2875`
-- Test: `def_front = 453`, `ok_front = 262`
-
-The training pipeline creates a validation split from the training set and computes normalization statistics from the training subset only to avoid data leakage.
-
-## Current Features
-
-- Grayscale image handling tailored to the dataset
-- Stratified train/validation split
-- Mean and standard deviation calculation from training data only
-- Data augmentation for training
-- Configurable optimizers and loss functions
-- Accuracy, precision, recall, and F1 tracking
-- Best-model saving
-- Experiment tracking with MLflow and DagsHub
-
-## How To Train
-
-Make a Main config like :
-
-`your/path/configs/config.yaml`
-
-Run from the project root:
-
-```powershell
-cd python/CNN_Pipeline
-python ../CNN_Pipeline/train.py --config configs/config.yaml
+```
+My-CNN/
+├── datasets/                     # DVC-tracked datasets
+├── python/
+│   ├── cnn_pipeline/             # Core training pipeline (shared)
+│   │   ├── train.py              # Training entry point
+│   │   ├── src/
+│   │   │   ├── pipeline/         # Data loaders, transforms, statistics
+│   │   │   ├── model/            # Model factory (custom + torchvision)
+│   │   │   ├── train/            # Training loop, MLflow logging
+│   │   │   └── utils/            # Config parsing, optimizer/criterion builders
+│   │   └── requirements.txt
+│   │
+│   ├── casting-def-detector/     # Casting defect detection module
+│   │   ├── configs/casting.yaml
+│   │   ├── models/               # DVC-trained model artifacts
+│   │   └── statistics.json
+│   │
+│   └── chest_xray/               # Chest X-ray classification module
+│       ├── src/
+│       │   ├── processing/       # Inference preprocessing
+│       │   └── inference/        # Predictor class & CLI
+│       ├── configs/
+│       ├── models/               # DVC-trained model artifacts
+│       └── statistics.json
 ```
 
-## Current Training Setup
+## Supported Models
 
-- Model: `casting_cnn`
-- Classes: `2`
-- Image size: `300x300`
-- Optimizer: `Adam`
-- Loss: `CrossEntropyLoss` with label smoothing
-- Tracking: `MLflow` with `DagsHub`
+| Model Name       | Description                           | Architecture        |
+|------------------|---------------------------------------|---------------------|
+| `casting_cnn`    | Custom CNN for casting defect images  | 3 conv blocks + FC  |
+| `chest_xray`     | Custom CNN for chest X-ray images     | 3 conv blocks + FC  |
+| `resnet18`       | Torchvision ResNet-18                 | Pretrained optional |
+| `resnet34`       | Torchvision ResNet-34                 | Pretrained optional |
+| `resnet50`       | Torchvision ResNet-50                 | Pretrained optional |
+| `vgg16`          | Torchvision VGG-16                    | Pretrained optional |
+| `efficientnet_b0`| Torchvision EfficientNet-B0           | Pretrained optional |
+
+## Installation
+
+1. Create a virtual environment and install dependencies:
+
+```bash
+cd python/cnn_pipeline
+pip install -r requirements.txt
+```
+
+## Training
+
+Each domain module has its own YAML configuration. To train a model:
+
+```bash
+cd python/<module>
+python ../cnn_pipeline/train.py --config configs/<config>.yaml
+```
+
+### Examples
+
+**Casting defect detector:**
+
+```bash
+cd python/casting-def-detector
+python ../cnn_pipeline/train.py --config configs/casting.yaml
+```
+
+**Chest X-ray with custom CNN:**
+
+```bash
+cd python/chest_xray
+python ../cnn_pipeline/train.py --config configs/xray-config1.yaml
+```
+
+**Chest X-ray with ResNet-18:**
+
+```bash
+cd python/chest_xray
+python ../cnn_pipeline/train.py --config configs/xray-resnet-config1.yaml
+```
+
+## Inference
+
+The chest X-ray module includes a CLI predictor:
+
+```bash
+cd python/chest_xray
+python src/inference/predictor.py images /path/to/image1.jpg /path/to/image2.jpg \
+  --model-path models/<checkpoint>.pt \
+  --config configs/xray-config1.yaml \
+  --class-names anomaly normal
+```
+
+## Configuration
+
+All training runs are driven by YAML configs with the following sections:
+
+```yaml
+model:
+  name: "casting_cnn"       # Model architecture
+  num_classes: 2            # Output classes
+  pretrained: false         # Use ImageNet weights (torchvision only)
+  dropout: 0.5              # Dropout rate
+
+optimizer:
+  name: "adam"              # adam, sgd, rmsprop, adamw, adagrad
+  lr: 0.001
+  weight_decay: 0.0001
+
+criterion:
+  name: "cross_entropy"     # cross_entropy, bce, mse, l1, nll
+  label_smoothing: 0.1
+
+data:
+  root_data_path: "../../datasets/casting_data"
+  batch_size: 32
+  img_size: [300, 300]
+  augment: true
+  three_gray_channels: false
+
+training:
+  epochs: 100
+  device: "auto"
+  seed: 42
+  early_stopping: true
+  patience: 10
+  save_dir: "./models"
+
+mlflow:
+  tracking_uri: "https://dagshub.com"
+  experiment_name: "My-CNNs_casting-defect-detection"
+  log_artifacts: true
+```
+
+## Key Features
+
+- **No data leakage**: Normalization statistics computed from training split only
+- **Stratified splits**: Maintains class balance across train/val sets
+- **Grayscale support**: Native 1-channel or 3-channel replicated mode
+- **Data augmentation**: Random horizontal flip, rotation, and affine transforms
+- **MLflow + DagsHub**: Full experiment tracking (loss, accuracy, precision, recall, F1)
+- **DVC versioning**: Datasets and model checkpoints tracked with DVC
+- **Flexible model factory**: Swap architectures via config without code changes
 
 ## Reproducibility
 
-The repository already includes:
+- Random seeds are set for PyTorch and CUDA
+- Stratified train/val splits use `random_state=42`
+- Normalization statistics are saved to `statistics.json` per module
+- All hyperparameters captured in YAML and logged to MLflow
 
-- DVC tracking for datasets and model outputs
-- Saved normalization statistics in `python/CNN_Pipeline/statistics.json`
-- Centralized configuration in YAML
+## Roadmap
+
+- [ ] Unified REST API to expose each trained model as a service
+- [ ] Docker containerization for deployment
+- [ ] Additional domain modules (e.g., skin lesion, retinal scan)
+- [ ] Model comparison dashboard
+- [ ] Automated hyperparameter tuning
+- [ ] ONNX export for edge deployment
