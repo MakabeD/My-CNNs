@@ -3,6 +3,8 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 ROOT_PATH = Path(__file__).parent.parent.parent
 sys.path.append(str(ROOT_PATH))
@@ -29,7 +31,7 @@ def load_model(config: Config, model_path: Path) -> nn.Module:
     return model
 
 
-def load_benchmark_set(path: Path):
+def load_benchmark_set(path: Path) -> ImageDataset:
     dataset = ImageDataset(root_dir=path)
     return dataset
 
@@ -53,6 +55,17 @@ def set_transform(
     return dataset
 
 
+def set_to_DataLoader(set: ImageDataset, batch_size: int, num_workers) -> DataLoader:
+    dataloader = DataLoader(
+        set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    return dataloader
+
+
 if __name__ == "__main__":
     config = load_config("./configs/xray-config1.yaml")
     model = load_model(
@@ -69,4 +82,8 @@ if __name__ == "__main__":
         train=False,
         three_gray_channels=config.data.three_gray_channels,
     )
-    print(set[0])
+    loader = set_to_DataLoader(set, config.data.batch_size, config.data.num_workers)
+    pbar = tqdm(loader, "siu")  # TODO: it remains to be finished the benchmarking loop
+    for idx, (inputs, labels) in enumerate(pbar):
+        pbar.set_postfix({"xd": f"{idx}"})
+    print(loader)
