@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 
 ROOT_PATH = Path(__file__).parent.parent.parent
 sys.path.append(str(ROOT_PATH))
@@ -9,7 +10,7 @@ from src.model.model import get_model
 from src.utils.config import Config, load_config
 
 
-def load_model(config: Config, model_path: Path):
+def load_model(config: Config, model_path: Path) -> nn.Module:
     model_name = config.model.name
     num_classes = config.model.num_classes
     pretrained = config.model.pretrained
@@ -24,6 +25,7 @@ def load_model(config: Config, model_path: Path):
     )
     state_dict = torch.load(model_path)
     model.load_state_dict(state_dict)
+    return model
 
 
 if __name__ == "__main__":
