@@ -10,6 +10,7 @@ ROOT_PATH = Path(__file__).parent.parent.parent
 sys.path.append(str(ROOT_PATH))
 from src.model.model import get_model
 from src.pipeline.data_pipeline import ImageDataset, get_transforms, load_statistics
+from src.train.training import compute_metrics
 from src.utils.config import Config, load_config
 
 
@@ -66,6 +67,24 @@ def set_to_DataLoader(set: ImageDataset, batch_size: int, num_workers) -> DataLo
     return dataloader
 
 
+def benchmarking_loop(dataloader: DataLoader, model: nn.Module):
+    all_preds = []
+    all_labels = []
+    pbar = tqdm(dataloader)
+    model.eval()
+    with torch.no_grad():
+        for idx, (inputs, labels) in enumerate(pbar):
+            output = model(inputs)
+            _, resoult = torch.max(output.data, 1)
+            all_preds.extend(resoult.cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
+            print(resoult.data)
+            print(labels)
+        y_true = torch.tensor(all_labels)
+        y_pred = torch.tensor(all_preds)
+        accuracy, precision, recall, f1_score = compute_metrics(y_true, y_pred)
+
+
 if __name__ == "__main__":
     config = load_config("./configs/xray-config1.yaml")
     model = load_model(
@@ -83,7 +102,4 @@ if __name__ == "__main__":
         three_gray_channels=config.data.three_gray_channels,
     )
     loader = set_to_DataLoader(set, config.data.batch_size, config.data.num_workers)
-    pbar = tqdm(loader, "siu")  # TODO: it remains to be finished the benchmarking loop
-    for idx, (inputs, labels) in enumerate(pbar):
-        pbar.set_postfix({"xd": f"{idx}"})
-    print(loader)
+    benchmarking_loop(loader, model)
