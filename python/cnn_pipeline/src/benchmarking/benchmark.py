@@ -1,10 +1,11 @@
 import sys
 import time
 from pathlib import Path
+from typing import Dict, List, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
-from numpy import average
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -76,39 +77,189 @@ def set_to_DataLoader(set: ImageDataset, batch_size: int, num_workers) -> DataLo
     return dataloader
 
 
-def benchmarking_loop(dataloader: DataLoader, model: nn.Module):
-    all_preds = []
-    all_labels = []
-    all_times = []
-    pbar = tqdm(dataloader)
-    model.eval().to(DEVICE)
+def _if_cuda():
+    if DEVICE == "cuda":
+        torch.cuda.synchronize()
+
+
+def _warmup_model(model: nn.Module, dataloader: DataLoader, num_warmup: int = 10):
+    model.eval()
+    warmup_iter = iter(dataloader)
+    for _ in range(num_warmup):
+        try:
+            inputs, _ = next(warmup_iter)
+        except StopIteration:
+            warmup_iter = iter(dataloader)
+            inputs, _ = next(warmup_iter)
+        with torch.no_grad():
+            _ = model(inputs.to(DEVICE))
+        if DEVICE == "cuda":
+            torch.cuda.synchronize()
+
+
+def _remove_outliers(times: List[float], percentile: float = 95) -> np.ndarray:
+    times_array = np.array(times)
+    threshold = np.percentile(times_array, percentile)
+    return times_array[times_array <= threshold]
+
+
+def compute_inference_stats(
+    all_times: List[float], batch_size: int
+) -> Dict[str, float]:
+    times_array = _remove_outliers(all_times)
+    
+    return {
+        "mean_time_per_batch": float(times_array.mean()),
+        "std_time_per_batch": float(times_array.std()),
+        "min_time_per_batch": float(times_array.min()),
+        "max_time_per_batch": float(times_array.max()),
+        "p50_time_per_batch": float(np.median(times_array)),
+        "p95_time_per_batch": float(np.percentile(times_array, 95)),
+        "throughput_batches_per_sec": float(1 / times_array.mean()),
+        "throughput_images_per_sec": float(batch_size / times_array.mean()),
+        "total_batches": len(all_times),
+        "valid_batches_after_outlier_removal": len(times_array),
+        "outliers_removed": len(all_times) - len(times_array),
+    }
+
+
+def compute_class_metrics(
+    y_true: torch.Tensor, y_pred: torch.Tensor, num_classes: int
+) -> Dict[str, float]:
+    metrics = {}
+    y_true_np = y_true.cpu().numpy()
+    y_pred_np = y_pred.cpu().numpy()
+    
+    metrics["accuracy"] = float((y_true_np == y_pred_np).mean())
+    
+    for cls in range(num_classes):
+        cls_mask_true = y_true_np == cls
+        cls_mask_pred = y_pred_np == cls
+        
+        tp = ((y_pred_np == cls) & (y_true_np == cls)).sum()
+        tn = ((y_pred_np != cls) & (y_true_np != cls)).sum()
+        fp = ((y_pred_np == cls) & (y_true_np != cls)).sum()
+        fn = ((y_pred_np != cls) & (y_true_np == cls)).sum()
+        
+        total = tp + tn + fp + fn
+        if total > 0:
+            metrics[f"class_{cls}_accuracy"] = float((tp + tn) / total)
+        if tp + fp > 0:
+            metrics[f"class_{cls}_precision"] = float(tp / (tp + fp))
+        if tp + fn > 0:
+            metrics[f"class_{cls}_recall"] = float(tp / (tp + fn))
+    
+    return metrics
+
+
+def benchmarking_loop(
+    dataloader: DataLoader,
+    model: nn.Module,
+    num_warmup: int = 10,
+    verbose: bool = True,
+) -> Dict[str, any]:
+    all_preds: List[int] = []
+    all_labels: List[int] = []
+    all_times: List[float] = []
+    batch_size = dataloader.batch_size
+    
+    if DEVICE == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+    
+    if verbose:
+        print(f"[1/3] Warming up model ({num_warmup} iterations)...")
+    _warmup_model(model, dataloader, num_warmup)
+    
+    if verbose:
+        print("[2/3] Running inference benchmark...")
+    model.eval()
+    
+    pbar = tqdm(dataloader, desc="Benchmarking", disable=not verbose)
     with torch.no_grad():
-        for idx, (inputs, labels) in enumerate(pbar):
+        for inputs, labels in pbar:
             inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
+            
             _if_cuda()
             start_time = time.perf_counter()
             output = model(inputs)
             _if_cuda()
             end_time = time.perf_counter()
+            
             all_times.append(end_time - start_time)
-            pbar.set_postfix({"time": f"{end_time - start_time:.4f}s"})
-
-            _, resoult = torch.max(output.data, 1)
-            all_preds.extend(resoult.cpu().tolist())
+            _, preds = torch.max(output, 1)
+            
+            all_preds.extend(preds.cpu().tolist())
             all_labels.extend(labels.cpu().tolist())
-        print(len(dataloader))
-        y_true = torch.tensor(all_labels)
-        y_pred = torch.tensor(all_preds)
-
-        average_time = sum(all_times) / len(dataloader)
-        print(average_time)
-        print(all_times)
-        accuracy, precision, recall, f1_score = compute_metrics(y_true, y_pred)
-
-
-def _if_cuda():
+            
+            current_throughput = batch_size / (end_time - start_time)
+            pbar.set_postfix({
+                "time": f"{end_time - start_time:.4f}s",
+                "fps": f"{current_throughput:.1f}",
+            })
+    
+    if verbose:
+        print("[3/3] Computing metrics...")
+    
+    inference_stats = compute_inference_stats(all_times, batch_size)
+    
+    y_true = torch.tensor(all_labels)
+    y_pred = torch.tensor(all_preds)
+    accuracy, precision, recall, f1_score = compute_metrics(y_true, y_pred)
+    
+    num_classes = len(torch.unique(y_true))
+    class_metrics = compute_class_metrics(y_true, y_pred, num_classes)
+    
+    results = {
+        "inference": inference_stats,
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1_score,
+        "class_metrics": class_metrics,
+        "device": DEVICE,
+    }
+    
     if DEVICE == "cuda":
-        torch.cuda.synchronize()
+        results["gpu_memory"] = {
+            "allocated_mb": torch.cuda.max_memory_allocated() / (1024 ** 2),
+            "reserved_mb": torch.cuda.max_memory_reserved() / (1024 ** 2),
+        }
+    
+    return results
+
+
+def print_results(results: Dict):
+    print("\n" + "=" * 60)
+    print("BENCHMARK RESULTS")
+    print("=" * 60)
+    
+    print("\n--- Inference Performance ---")
+    inf = results["inference"]
+    print(f"  Mean time/batch:    {inf['mean_time_per_batch']*1000:.2f} ms")
+    print(f"  Std dev:            {inf['std_time_per_batch']*1000:.2f} ms")
+    print(f"  Min/Max:            {inf['min_time_per_batch']*1000:.2f} / {inf['max_time_per_batch']*1000:.2f} ms")
+    print(f"  P50/P95:            {inf['p50_time_per_batch']*1000:.2f} / {inf['p95_time_per_batch']*1000:.2f} ms")
+    print(f"  Throughput:         {inf['throughput_images_per_sec']:.1f} images/sec")
+    print(f"  Valid batches:      {inf['valid_batches_after_outlier_removal']}/{inf['total_batches']} (removed {inf['outliers_removed']} outliers)")
+    
+    print("\n--- Classification Metrics ---")
+    print(f"  Accuracy:    {results['accuracy']:.4f}")
+    print(f"  Precision:   {results['precision']:.4f}")
+    print(f"  Recall:      {results['recall']:.4f}")
+    print(f"  F1 Score:    {results['f1_score']:.4f}")
+    
+    print("\n--- Per-Class Metrics ---")
+    for key, value in results["class_metrics"].items():
+        print(f"  {key}: {value:.4f}")
+    
+    if "gpu_memory" in results:
+        print("\n--- GPU Memory ---")
+        print(f"  Allocated:  {results['gpu_memory']['allocated_mb']:.1f} MB")
+        print(f"  Reserved:   {results['gpu_memory']['reserved_mb']:.1f} MB")
+    
+    print("\n--- Device ---")
+    print(f"  {results['device']}")
+    print("=" * 60 + "\n")
 
 
 if __name__ == "__main__":
@@ -117,15 +268,19 @@ if __name__ == "__main__":
         config=config,
         model_path=Path("./models/chest-xray-own-best_model_0.2604.pt").resolve(),
     )
-    set = load_benchmark_set(
+    model.to(DEVICE)
+    
+    dataset = load_benchmark_set(
         Path("../../datasets/chest_xray_data/benchmarking").resolve()
     )
-    set = set_transform(
+    dataset = set_transform(
         Path("./statistics.json"),
-        dataset=set,
+        dataset=dataset,
         img_size=config.data.img_size,
         train=False,
         three_gray_channels=config.data.three_gray_channels,
     )
-    loader = set_to_DataLoader(set, config.data.batch_size, config.data.num_workers)
-    benchmarking_loop(loader, model)
+    dataloader = set_to_DataLoader(dataset, config.data.batch_size, config.data.num_workers)
+    
+    results = benchmarking_loop(dataloader, model, num_warmup=10, verbose=True)
+    print_results(results)
