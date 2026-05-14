@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class CastingDataset(Dataset):
+class ImageDataset(Dataset):
     """
     Custom dataset to handle specific folder structures and ensure grayscale conversion.
     """
@@ -180,17 +180,20 @@ def calculate_mean_std_from_subset(
     return mean, std
 
 
-def get_transforms(mean, std, img_size=(300, 300), train=True, three_gray_channels=False):
+def get_transforms(
+    mean, std, img_size=(300, 300), train=True, three_gray_channels=False
+):
     """Returns transforms with optional augmentation for training"""
     if three_gray_channels:
         base_transforms = [
-        transforms.Resize(img_size),
-        transforms.Grayscale(num_output_channels=3),  # Convert to 3 identical channels
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[mean, mean, mean], std=[std, std, std]),
-    ]
+            transforms.Resize(img_size),
+            transforms.Grayscale(
+                num_output_channels=3
+            ),  # Convert to 3 identical channels
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[mean, mean, mean], std=[std, std, std]),
+        ]
     else:
-        
         base_transforms = [
             transforms.Resize(img_size),
             transforms.ToTensor(),
@@ -210,7 +213,13 @@ def get_transforms(mean, std, img_size=(300, 300), train=True, three_gray_channe
 
 
 def prepare_data(
-    root_data_path, batch_size=32, val_split=0.2, num_workers=0, img_size=(300, 300), split_test=True, three_gray_channels=False
+    root_data_path,
+    batch_size=32,
+    val_split=0.2,
+    num_workers=0,
+    img_size=(300, 300),
+    split_test=True,
+    three_gray_channels=False,
 ):
     """
     Main function to prepare DataLoaders.
@@ -243,7 +252,7 @@ def prepare_data(
         )
 
     # 1. Load Raw Training Dataset (no transforms yet)
-    full_train_dataset = CastingDataset(root_dir=str(train_dir), transform=None)
+    full_train_dataset = ImageDataset(root_dir=str(train_dir), transform=None)
     classes = full_train_dataset.classes
     logger.info(f"Classes found: {classes}")
     if split_test:
@@ -265,8 +274,12 @@ def prepare_data(
         # We create temporary subsets just to pass to the stats calculator
         train_subset_for_stats = Subset(full_train_dataset, train_indices)
     else:
-        logger.info("Using separate validation folder; statistics will be computed from the full training set.")
-        train_subset_for_stats = full_train_dataset  # Use all training data for stats if no split
+        logger.info(
+            "Using separate validation folder; statistics will be computed from the full training set."
+        )
+        train_subset_for_stats = (
+            full_train_dataset  # Use all training data for stats if no split
+        )
     # 4. Calculate Stats FROM THE TRAIN SUBSET ONLY (No Leakage!)
     mean, std = calculate_mean_std_from_subset(
         train_subset_for_stats, img_size=img_size
@@ -274,14 +287,28 @@ def prepare_data(
     logger.info(f"Calculated Stats (Train Only) -> Mean: {mean:.4f}, Std: {std:.4f}")
 
     # 5. Define Transforms using the calculated stats
-    train_transform = get_transforms(mean, std, img_size=img_size, train=True, three_gray_channels=three_gray_channels)
-    val_test_transform = get_transforms(mean, std, img_size=img_size, train=False, three_gray_channels=three_gray_channels)
+    train_transform = get_transforms(
+        mean,
+        std,
+        img_size=img_size,
+        train=True,
+        three_gray_channels=three_gray_channels,
+    )
+    val_test_transform = get_transforms(
+        mean,
+        std,
+        img_size=img_size,
+        train=False,
+        three_gray_channels=three_gray_channels,
+    )
 
     # 6. Create Final Datasets with Transforms
     # We re-instantiate datasets to ensure clean transform application
-    train_base = CastingDataset(root_dir=str(train_dir), transform=train_transform)
-    val_base = CastingDataset(root_dir=str(train_dir if split_test else val_dir), transform=val_test_transform)
-    test_base = CastingDataset(root_dir=str(test_dir), transform=val_test_transform)
+    train_base = ImageDataset(root_dir=str(train_dir), transform=train_transform)
+    val_base = ImageDataset(
+        root_dir=str(train_dir if split_test else val_dir), transform=val_test_transform
+    )
+    test_base = ImageDataset(root_dir=str(test_dir), transform=val_test_transform)
 
     # Apply the split indices to the new transformed datasets
     train_set = Subset(train_base, train_indices) if split_test else train_base
