@@ -3,6 +3,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import dagshub
+import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -233,6 +235,22 @@ def print_results(results: Dict):
     print("=" * 60 + "\n")
 
 
+def mlflow_save_results(
+    config: Config,
+    results: dict,
+    repo_owner: str = "MakabeD",
+    repo_name: str = "My-CNNs",
+):
+    if mlflow.active_run():
+        mlflow.end_run()
+    dagshub.init(repo_name, repo_owner, mlflow=True)
+    mlflow.set_experiment(f"benchmarking_{config.mlflow.experiment_name}")
+    if config.training.run_name:
+        mlflow.set_tag("mlflow.runName", config.training.run_name)
+    if mlflow.active_run():
+        print("siu")
+
+
 if __name__ == "__main__":
     config = load_config("./configs/xray-config1.yaml")
     model = load_model(
@@ -257,3 +275,4 @@ if __name__ == "__main__":
 
     results = benchmarking_loop(dataloader, model, num_warmup=10, verbose=True)
     print_results(results)
+    mlflow_save_results(config, results)
