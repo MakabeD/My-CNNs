@@ -248,7 +248,11 @@ def mlflow_save_results(
     if config.training.run_name:
         mlflow.set_tag("mlflow.runName", config.training.run_name)
     if mlflow.active_run():
-        print("siu")
+        mlflow.log_param("name", config.training.run_name)
+        mlflow.log_metric("precision", results.get("precision", 999))
+        mlflow.log_metric("accuracy", results.get("accuracy", 999))
+        mlflow.log_metric("recall", results.get("recall", 999))
+        mlflow.log_metric("f1-score", results.get("f1-score", 999))
 
 
 if __name__ == "__main__":
