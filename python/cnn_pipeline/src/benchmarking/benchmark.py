@@ -19,7 +19,7 @@ from src.pipeline.data_pipeline import (
     load_statistics,
 )
 from src.train.training import compute_metrics
-from src.utils.config import Config, load_config
+from src.utils.config import Config
 
 
 def _get_device():
@@ -245,32 +245,4 @@ def mlflow_save_results(
         )
 
 
-if __name__ == "__main__":
-    config = load_config("./configs/xray-config1.yaml")
-    model = load_model(
-        config=config,
-        model_path=Path("./models/chest-xray-own-best_model_0.2604.pt").resolve(),
-    )
-    model.to(_get_device())
 
-    dataset = ImageDataset(
-        root_dir=Path("../../datasets/chest_xray_data/benchmarking").resolve()
-    )
-    apply_transform(
-        Path("./statistics.json"),
-        dataset=dataset,
-        img_size=config.data.img_size,
-        train=False,
-        three_gray_channels=config.data.three_gray_channels,
-    )
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.data.batch_size,
-        shuffle=False,
-        num_workers=config.data.num_workers,
-        pin_memory=True,
-    )
-
-    results = benchmarking_loop(dataloader, model, num_warmup=10, verbose=True)
-    print_results(results)
-    mlflow_save_results(config, results)
