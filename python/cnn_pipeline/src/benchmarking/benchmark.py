@@ -252,7 +252,10 @@ def mlflow_save_results(
         mlflow.log_metric("precision", results.get("precision", 999))
         mlflow.log_metric("accuracy", results.get("accuracy", 999))
         mlflow.log_metric("recall", results.get("recall", 999))
-        mlflow.log_metric("f1-score", results.get("f1-score", 999))
+        mlflow.log_metric("f1_score", results.get("f1-score", 999))
+        mlflow.log_metric(
+            "mean_time/batch", results["inference"]["mean_time_per_batch"]
+        )
 
 
 if __name__ == "__main__":
