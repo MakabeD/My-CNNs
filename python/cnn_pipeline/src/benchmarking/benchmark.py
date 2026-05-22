@@ -1,10 +1,8 @@
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-import dagshub
-import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -23,35 +21,29 @@ from src.pipeline.data_pipeline import (
 from src.train.training import compute_metrics
 from src.utils.config import Config, load_config
 
-DEVICE = get_device()
+
+def _get_device():
+    if not hasattr(_get_device, "_cache"):
+        _get_device._cache = get_device()
+    return _get_device._cache
 
 
 def load_model(config: Config, model_path: Path) -> nn.Module:
-    model_name = config.model.name
-    num_classes = config.model.num_classes
-    pretrained = config.model.pretrained
-    dropout = config.model.dropout
-
-    print(model_path)
     model = get_model(
-        model_name=model_name,
-        num_classes=num_classes,
-        pretrained=pretrained,
-        dropout=dropout,
+        model_name=config.model.name,
+        num_classes=config.model.num_classes,
+        pretrained=config.model.pretrained,
+        dropout=config.model.dropout,
     )
+    print(model_path)
     state_dict = torch.load(model_path)
     model.load_state_dict(state_dict)
     return model
 
 
-def load_benchmark_set(path: Path) -> ImageDataset:
-    dataset = ImageDataset(root_dir=path)
-    return dataset
-
-
-def set_transform(
+def apply_transform(
     statistics_path: Path,
-    dataset,
+    dataset: ImageDataset,
     img_size: tuple,
     train: bool,
     three_gray_channels: bool,
@@ -65,26 +57,10 @@ def set_transform(
         three_gray_channels=three_gray_channels,
     )
     dataset.transform = transform
-    return dataset
-
-
-def set_to_DataLoader(set: ImageDataset, batch_size: int, num_workers) -> DataLoader:
-    dataloader = DataLoader(
-        set,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-    return dataloader
-
-
-def _if_cuda():
-    if DEVICE == "cuda":
-        torch.cuda.synchronize()
 
 
 def _warmup_model(model: nn.Module, dataloader: DataLoader, num_warmup: int = 10):
+    device = _get_device()
     model.eval()
     warmup_iter = iter(dataloader)
     for _ in range(num_warmup):
@@ -93,9 +69,9 @@ def _warmup_model(model: nn.Module, dataloader: DataLoader, num_warmup: int = 10
         except StopIteration:
             warmup_iter = iter(dataloader)
             inputs, _ = next(warmup_iter)
-        with torch.no_grad():
-            _ = model(inputs.to(DEVICE))
-        if DEVICE == "cuda":
+        with torch.inference_mode():
+            _ = model(inputs.to(device))
+        if device == "cuda":
             torch.cuda.synchronize()
 
 
@@ -106,9 +82,9 @@ def _remove_outliers(times: List[float], percentile: float = 95) -> np.ndarray:
 
 
 def compute_inference_stats(
-    all_times: List[float], batch_size: int
+    batch_times: List[float], batch_size: int
 ) -> Dict[str, float]:
-    times_array = _remove_outliers(all_times)
+    times_array = _remove_outliers(batch_times)
 
     return {
         "mean_time_per_batch": float(times_array.mean()),
@@ -119,9 +95,9 @@ def compute_inference_stats(
         "p95_time_per_batch": float(np.percentile(times_array, 95)),
         "throughput_batches_per_sec": float(1 / times_array.mean()),
         "throughput_images_per_sec": float(batch_size / times_array.mean()),
-        "total_batches": len(all_times),
+        "total_batches": len(batch_times),
         "valid_batches_after_outlier_removal": len(times_array),
-        "outliers_removed": len(all_times) - len(times_array),
+        "outliers_removed": len(batch_times) - len(times_array),
     }
 
 
@@ -131,12 +107,13 @@ def benchmarking_loop(
     num_warmup: int = 10,
     verbose: bool = True,
 ) -> Dict[str, any]:
+    device = _get_device()
     all_preds: List[int] = []
     all_labels: List[int] = []
-    all_times: List[float] = []
+    batch_times: List[float] = []
     batch_size = dataloader.batch_size
 
-    if DEVICE == "cuda":
+    if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
 
     if verbose:
@@ -148,17 +125,19 @@ def benchmarking_loop(
     model.eval()
 
     pbar = tqdm(dataloader, desc="Benchmarking", disable=not verbose)
-    with torch.no_grad():
+    with torch.inference_mode():
         for inputs, labels in pbar:
-            inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
+            inputs, labels = inputs.to(device), labels.to(device)
 
-            _if_cuda()
+            if device == "cuda":
+                torch.cuda.synchronize()
             start_time = time.perf_counter()
             output = model(inputs)
-            _if_cuda()
+            if device == "cuda":
+                torch.cuda.synchronize()
             end_time = time.perf_counter()
 
-            all_times.append(end_time - start_time)
+            batch_times.append(end_time - start_time)
             _, preds = torch.max(output, 1)
 
             all_preds.extend(preds.cpu().tolist())
@@ -175,7 +154,7 @@ def benchmarking_loop(
     if verbose:
         print("[3/3] Computing metrics...")
 
-    inference_stats = compute_inference_stats(all_times, batch_size)
+    inference_stats = compute_inference_stats(batch_times, batch_size)
 
     y_true = torch.tensor(all_labels)
     y_pred = torch.tensor(all_preds)
@@ -187,10 +166,10 @@ def benchmarking_loop(
         "precision": precision,
         "recall": recall,
         "f1_score": f1_score,
-        "device": DEVICE,
+        "device": device,
     }
 
-    if DEVICE == "cuda":
+    if device == "cuda":
         results["gpu_memory"] = {
             "allocated_mb": torch.cuda.max_memory_allocated() / (1024**2),
             "reserved_mb": torch.cuda.max_memory_reserved() / (1024**2),
@@ -199,40 +178,45 @@ def benchmarking_loop(
     return results
 
 
-def print_results(results: Dict):
-    print("\n" + "=" * 60)
-    print("BENCHMARK RESULTS")
-    print("=" * 60)
+def print_results(results: Dict, file=None):
+    text = "\n" + "=" * 60
+    text += "\nBENCHMARK RESULTS"
+    text += "\n" + "=" * 60
 
-    print("\n--- Inference Performance ---")
+    text += "\n\n--- Inference Performance ---"
     inf = results["inference"]
-    print(f"  Mean time/batch:    {inf['mean_time_per_batch'] * 1000:.2f} ms")
-    print(f"  Std dev:            {inf['std_time_per_batch'] * 1000:.2f} ms")
-    print(
-        f"  Min/Max:            {inf['min_time_per_batch'] * 1000:.2f} / {inf['max_time_per_batch'] * 1000:.2f} ms"
+    text += f"\n  Mean time/batch:    {inf['mean_time_per_batch'] * 1000:.2f} ms"
+    text += f"\n  Std dev:            {inf['std_time_per_batch'] * 1000:.2f} ms"
+    text += (
+        f"\n  Min/Max:            {inf['min_time_per_batch'] * 1000:.2f} /"
+        f" {inf['max_time_per_batch'] * 1000:.2f} ms"
     )
-    print(
-        f"  P50/P95:            {inf['p50_time_per_batch'] * 1000:.2f} / {inf['p95_time_per_batch'] * 1000:.2f} ms"
+    text += (
+        f"\n  P50/P95:            {inf['p50_time_per_batch'] * 1000:.2f} /"
+        f" {inf['p95_time_per_batch'] * 1000:.2f} ms"
     )
-    print(f"  Throughput:         {inf['throughput_images_per_sec']:.1f} images/sec")
-    print(
-        f"  Valid batches:      {inf['valid_batches_after_outlier_removal']}/{inf['total_batches']} (removed {inf['outliers_removed']} outliers)"
+    text += f"\n  Throughput:         {inf['throughput_images_per_sec']:.1f} images/sec"
+    text += (
+        f"\n  Valid batches:      {inf['valid_batches_after_outlier_removal']}"
+        f"/{inf['total_batches']} (removed {inf['outliers_removed']} outliers)"
     )
 
-    print("\n--- Classification Metrics ---")
-    print(f"  Accuracy:    {results['accuracy']:.4f}")
-    print(f"  Precision:   {results['precision']:.4f}")
-    print(f"  Recall:      {results['recall']:.4f}")
-    print(f"  F1 Score:    {results['f1_score']:.4f}")
+    text += "\n\n--- Classification Metrics ---"
+    text += f"\n  Accuracy:    {results['accuracy']:.4f}"
+    text += f"\n  Precision:   {results['precision']:.4f}"
+    text += f"\n  Recall:      {results['recall']:.4f}"
+    text += f"\n  F1 Score:    {results['f1_score']:.4f}"
 
     if "gpu_memory" in results:
-        print("\n--- GPU Memory ---")
-        print(f"  Allocated:  {results['gpu_memory']['allocated_mb']:.1f} MB")
-        print(f"  Reserved:   {results['gpu_memory']['reserved_mb']:.1f} MB")
+        text += "\n\n--- GPU Memory ---"
+        text += f"\n  Allocated:  {results['gpu_memory']['allocated_mb']:.1f} MB"
+        text += f"\n  Reserved:   {results['gpu_memory']['reserved_mb']:.1f} MB"
 
-    print("\n--- Device ---")
-    print(f"  {results['device']}")
-    print("=" * 60 + "\n")
+    text += "\n\n--- Device ---"
+    text += f"\n  {results['device']}"
+    text += "\n" + "=" * 60 + "\n"
+
+    print(text, file=file)
 
 
 def mlflow_save_results(
@@ -241,6 +225,9 @@ def mlflow_save_results(
     repo_owner: str = "MakabeD",
     repo_name: str = "My-CNNs",
 ):
+    import dagshub
+    import mlflow
+
     if mlflow.active_run():
         mlflow.end_run()
     dagshub.init(repo_name, repo_owner, mlflow=True)
@@ -252,7 +239,7 @@ def mlflow_save_results(
         mlflow.log_metric("precision", results.get("precision", 999))
         mlflow.log_metric("accuracy", results.get("accuracy", 999))
         mlflow.log_metric("recall", results.get("recall", 999))
-        mlflow.log_metric("f1_score", results.get("f1-score", 999))
+        mlflow.log_metric("f1_score", results.get("f1_score", 999))
         mlflow.log_metric(
             "mean_time/batch", results["inference"]["mean_time_per_batch"]
         )
@@ -264,20 +251,24 @@ if __name__ == "__main__":
         config=config,
         model_path=Path("./models/chest-xray-own-best_model_0.2604.pt").resolve(),
     )
-    model.to(DEVICE)
+    model.to(_get_device())
 
-    dataset = load_benchmark_set(
-        Path("../../datasets/chest_xray_data/benchmarking").resolve()
+    dataset = ImageDataset(
+        root_dir=Path("../../datasets/chest_xray_data/benchmarking").resolve()
     )
-    dataset = set_transform(
+    apply_transform(
         Path("./statistics.json"),
         dataset=dataset,
         img_size=config.data.img_size,
         train=False,
         three_gray_channels=config.data.three_gray_channels,
     )
-    dataloader = set_to_DataLoader(
-        dataset, config.data.batch_size, config.data.num_workers
+    dataloader = DataLoader(
+        dataset,
+        batch_size=config.data.batch_size,
+        shuffle=False,
+        num_workers=config.data.num_workers,
+        pin_memory=True,
     )
 
     results = benchmarking_loop(dataloader, model, num_warmup=10, verbose=True)
