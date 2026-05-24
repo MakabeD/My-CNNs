@@ -182,7 +182,7 @@ def calculate_mean_std_from_subset(
 
 def get_transforms(
     mean, std, img_size=(300, 300), train=True, three_gray_channels=False
-):
+) -> transforms.Compose:
     """Returns transforms with optional augmentation for training"""
     if three_gray_channels:
         base_transforms = [

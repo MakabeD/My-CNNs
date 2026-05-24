@@ -2,10 +2,10 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import torch
-from PIL import Image
+from PIL import Image, ImageFile
 
 ROOT_PATH = Path(__file__).resolve().parents[4]
 PYTHON_ROOT = ROOT_PATH / "python"
@@ -14,7 +14,7 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.append(str(PYTHON_ROOT))
 
 from chest_xray.src.processing.processing import InferenceProcessing  # noqa: E402
-from cnn_pipeline.src.model.model import get_model  # noqa: E402
+from pipelines.src.model.model import get_model  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,8 +67,18 @@ class ChestXrayPredictor:
         logger.info("Loaded model from %s", self.model_path)
         return model
 
-    def preprocess_image(self, image_path: str | Path) -> torch.Tensor:
-        image = Image.open(image_path).convert("L")
+    def preprocess_image(
+        self, _image: Optional[str | Path | Image.Image]
+    ) -> torch.Tensor:
+
+        if isinstance(_image, str) or isinstance(_image, Path):
+            image = Image.open(_image).convert("L")
+        elif isinstance(_image, Image.Image):
+            image = _image.convert("L")
+        else:
+            raise ValueError(
+                "Either image path or ImageFile instance, must be provided"
+            )
         tensor = self.transform(image).unsqueeze(0)
         return tensor.to(self.device)
 
@@ -98,14 +108,20 @@ class ChestXrayPredictor:
             "scores": scores,
         }
 
-    def predict_image(self, image_path: str | Path) -> dict[str, Any]:
-        image_path = Path(image_path).resolve()
-        tensor = self.preprocess_image(image_path)
+    def predict_image(
+        self, _image: Optional[str | Path | ImageFile.ImageFile]
+    ) -> dict[str, Any]:
+
+        if isinstance(_image, str):
+            _image = Path(_image).resolve()
+        tensor = self.preprocess_image(_image)
         prediction = self.predict_tensor(tensor)
-        prediction["image_path"] = str(image_path)
+        prediction["image_path"] = str(_image)
         return prediction
 
-    def predict_images(self, image_paths: list[str | Path]) -> list[dict[str, Any]]:
+    def predict_images(
+        self, image_paths: list[str | Path | ImageFile.ImageFile]
+    ) -> list[dict[str, Any]]:
         return [self.predict_image(image_path) for image_path in image_paths]
 
 

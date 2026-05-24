@@ -4,7 +4,7 @@ A modular PyTorch pipeline for training and deploying CNN-based image classifica
 
 ## Overview
 
-My-CNN is designed as a reusable training and inference framework. Each domain (casting defects, chest X-rays) lives as its own module under `python/`, sharing a common core pipeline (`cnn_pipeline`) that handles:
+My-CNN is designed as a reusable training and inference framework. Each domain (casting defects, chest X-rays) lives as its own module under `python/`, sharing a common core pipeline (`pipelines`) that handles:
 
 - Config-driven training with YAML
 - Custom CNNs and torchvision backbones (ResNet, VGG, EfficientNet)
@@ -18,7 +18,7 @@ My-CNN is designed as a reusable training and inference framework. Each domain (
 My-CNN/
 ├── datasets/                     # DVC-tracked datasets
 ├── python/
-│   ├── cnn_pipeline/             # Core training pipeline (shared)
+│   ├── pipelines/             # Core training pipeline (shared)
 │   │   ├── train.py              # Training entry point
 │   │   ├── src/
 │   │   │   ├── pipeline/         # Data loaders, transforms, statistics
@@ -58,7 +58,7 @@ My-CNN/
 1. Create a virtual environment and install dependencies:
 
 ```bash
-cd python/cnn_pipeline
+cd python/pipelines
 pip install -r requirements.txt
 ```
 
@@ -68,7 +68,7 @@ Each domain module has its own YAML configuration. To train a model:
 
 ```bash
 cd python/<module>
-python ../cnn_pipeline/train.py --config configs/<config>.yaml
+python ../pipelines/train.py --config configs/<config>.yaml
 ```
 
 ### Examples
@@ -77,21 +77,21 @@ python ../cnn_pipeline/train.py --config configs/<config>.yaml
 
 ```bash
 cd python/casting-def-detector
-python ../cnn_pipeline/train.py --config configs/casting.yaml
+python ../pipelines/train.py --config configs/casting.yaml
 ```
 
 **Chest X-ray with custom CNN:**
 
 ```bash
 cd python/chest_xray
-python ../cnn_pipeline/train.py --config configs/xray-config1.yaml
+python ../pipelines/train.py --config configs/xray-config1.yaml
 ```
 
 **Chest X-ray with ResNet-18:**
 
 ```bash
 cd python/chest_xray
-python ../cnn_pipeline/train.py --config configs/xray-resnet-config1.yaml
+python ../pipelines/train.py --config configs/xray-resnet-config1.yaml
 ```
 
 ## Inference

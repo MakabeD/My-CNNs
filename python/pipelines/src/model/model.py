@@ -140,6 +140,7 @@ class ChestXray(nn.Module):
 
         return x
 
+
 def _change_head(model: nn.Module, num_classes: int) -> nn.Module:
     """
     Helper function to change the classification head of a pretrained model.
@@ -163,8 +164,9 @@ def _change_head(model: nn.Module, num_classes: int) -> nn.Module:
             raise ValueError("Unsupported classifier structure for modifying head.")
     else:
         raise ValueError("Model does not have a recognizable classification head.")
-    
+
     return model
+
 
 def get_model(
     model_name: str = "casting_cnn",
@@ -207,23 +209,17 @@ def get_model(
 
             if model_name_lower == "resnet18":
                 base_model = models.resnet18(
-                    weights=models.ResNet18_Weights.DEFAULT
-                    if pretrained
-                    else None
+                    weights=models.ResNet18_Weights.DEFAULT if pretrained else None
                 )
                 base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "resnet34":
                 base_model = models.resnet34(
-                    weights=models.ResNet34_Weights.DEFAULT
-                    if pretrained
-                    else None
+                    weights=models.ResNet34_Weights.DEFAULT if pretrained else None
                 )
                 base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "resnet50":
                 base_model = models.resnet50(
-                    weights=models.ResNet50_Weights.DEFAULT
-                    if pretrained
-                    else None
+                    weights=models.ResNet50_Weights.DEFAULT if pretrained else None
                 )
                 base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "vgg16":
@@ -245,8 +241,8 @@ def get_model(
             if pretrained:
                 for param in base_model.parameters():
                     param.requires_grad = False
-            
-            base_model=_change_head(base_model,num_classes)
+
+            base_model = _change_head(base_model, num_classes)
             model = base_model
         except ImportError:
             raise ImportError(

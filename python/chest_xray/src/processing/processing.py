@@ -9,12 +9,12 @@ PYTHON_ROOT = ROOT_PATH / "python"
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.append(str(PYTHON_ROOT))
 
-from cnn_pipeline.src.pipeline.data_pipeline import (  # noqa: E402
+from pipelines.src.pipeline.data_pipeline import (  # noqa: E402
     get_device,
     get_transforms,
     load_statistics,
 )
-from cnn_pipeline.src.utils.config import Config, load_config  # noqa: E402
+from pipelines.src.utils.config import Config, load_config  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
