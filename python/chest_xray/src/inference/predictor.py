@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
-from PIL import Image, ImageFile
+from PIL import Image
 
 ROOT_PATH = Path(__file__).resolve().parents[4]
 PYTHON_ROOT = ROOT_PATH / "python"
@@ -68,18 +68,18 @@ class ChestXrayPredictor:
         return model
 
     def preprocess_image(
-        self, _image: Optional[str | Path | Image.Image]
+        self, image: str | Path | Image.Image
     ) -> torch.Tensor:
-
-        if isinstance(_image, str) or isinstance(_image, Path):
-            image = Image.open(_image).convert("L")
-        elif isinstance(_image, Image.Image):
-            image = _image.convert("L")
+        if isinstance(image, (str, Path)):
+            pil_image = Image.open(image).convert("L")
+        elif isinstance(image, Image.Image):
+            pil_image = image.convert("L")
         else:
             raise ValueError(
-                "Either image path or ImageFile instance, must be provided"
+                "Expected a file path (str/Path) or PIL Image, "
+                f"got {type(image).__name__}"
             )
-        tensor = self.transform(image).unsqueeze(0)
+        tensor = self.transform(pil_image).unsqueeze(0)
         return tensor.to(self.device)
 
     @torch.inference_mode()
@@ -109,20 +109,25 @@ class ChestXrayPredictor:
         }
 
     def predict_image(
-        self, _image: Optional[str | Path | ImageFile.ImageFile]
+        self, image: str | Path | Image.Image
     ) -> dict[str, Any]:
-
-        if isinstance(_image, str):
-            _image = Path(_image).resolve()
-        tensor = self.preprocess_image(_image)
+        if isinstance(image, (str, Path)):
+            image_path = str(Path(image).resolve())
+        elif isinstance(image, Image.Image):
+            image_path = None
+        else:
+            raise TypeError(
+                f"Expected str, Path, or PIL Image, got {type(image).__name__}"
+            )
+        tensor = self.preprocess_image(image)
         prediction = self.predict_tensor(tensor)
-        prediction["image_path"] = str(_image)
+        prediction["image_path"] = image_path
         return prediction
 
     def predict_images(
-        self, image_paths: list[str | Path | ImageFile.ImageFile]
+        self, images: list[str | Path | Image.Image]
     ) -> list[dict[str, Any]]:
-        return [self.predict_image(image_path) for image_path in image_paths]
+        return [self.predict_image(image) for image in images]
 
 
 def build_parser() -> argparse.ArgumentParser:

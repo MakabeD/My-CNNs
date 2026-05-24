@@ -197,47 +197,40 @@ def get_model(
         model = CastingDefectCNN(num_classes=num_classes, dropout=dropout)
     elif model_name_lower == "chest_xray":
         model = ChestXray(num_classes=num_classes, dropout=dropout)
-    elif model_name_lower in [
+    elif model_name_lower in (
         "resnet18",
         "resnet34",
         "resnet50",
         "vgg16",
         "efficientnet",
-    ]:
+    ):
         try:
             import torchvision.models as models
 
-            if model_name_lower == "resnet18":
-                base_model = models.resnet18(
-                    weights=models.ResNet18_Weights.DEFAULT if pretrained else None
+            resnet_configs = {
+                "resnet18": (models.resnet18, models.ResNet18_Weights),
+                "resnet34": (models.resnet34, models.ResNet34_Weights),
+                "resnet50": (models.resnet50, models.ResNet50_Weights),
+            }
+
+            if model_name_lower in resnet_configs:
+                builder, weights_cls = resnet_configs[model_name_lower]
+                base_model = builder(
+                    weights=weights_cls.DEFAULT if pretrained else None
                 )
-                base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
-            elif model_name_lower == "resnet34":
-                base_model = models.resnet34(
-                    weights=models.ResNet34_Weights.DEFAULT if pretrained else None
-                )
-                base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
-            elif model_name_lower == "resnet50":
-                base_model = models.resnet50(
-                    weights=models.ResNet50_Weights.DEFAULT if pretrained else None
-                )
-                base_model.fc = nn.Linear(base_model.fc.in_features, num_classes)
             elif model_name_lower == "vgg16":
                 base_model = models.vgg16(
                     weights=models.VGG16_Weights.DEFAULT if pretrained else None
                 )
-                base_model.classifier[6] = nn.Linear(4096, num_classes)
-            elif model_name_lower.startswith("efficientnet"):
+            elif model_name_lower == "efficientnet":
                 base_model = models.efficientnet_b0(
                     weights=models.EfficientNet_B0_Weights.DEFAULT
                     if pretrained
                     else None
                 )
-                base_model.classifier[1] = nn.Linear(
-                    base_model.classifier[1].in_features, num_classes
-                )
             else:
                 raise ValueError(f"Unsupported torchvision model: {model_name}")
+
             if pretrained:
                 for param in base_model.parameters():
                     param.requires_grad = False
